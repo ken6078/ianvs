@@ -27,8 +27,7 @@ from sedna.common.class_factory import ClassType, ClassFactory
 
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
-device = "mps" if torch.backends.mps.is_available() else "cpu"
-
+device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
 
 logging.disable(logging.WARNING)
 
