@@ -47,7 +47,7 @@ class BaseModel:
         )
         self.tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-0.5B-Instruct")
 
-    def preprocess(self, data, **kwargs):
+    def preprocess(self, data=None, **kwargs):
         print("BaseModel doesn't need to preprocess")
         return data
 
