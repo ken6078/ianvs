@@ -8,7 +8,7 @@ This guide outlines the complete setup, configuration, and execution process for
 
 ---
 
-## 🛠️ Step 1: Environment Setup
+## Step 1: Environment Setup
 
 First, ensure your Ianvs virtual environment is active:
 ```bash
