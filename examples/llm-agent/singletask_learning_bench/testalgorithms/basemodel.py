@@ -29,29 +29,29 @@ class BaseModel:
         train_config=kwargs.get("train_config")
         with open(train_config, 'r', encoding='utf-8') as file:
             self.train_config = json.load(file)
-        
+
         self.tokenizer_dir = self.config["tokenizer_dir"]
         self.auth_token=self.config["auth_token"]
         self.token_factor=self.config["token_factor"]
         self.MAX_LENGTH = 128
-        self.model = AutoModelForCausalLM.from_pretrained(self.tokenizer_dir, use_auth_token=self.auth_token,device_map=self.config["device"],trust_remote_code=self.config["trust_remote"])
+        self.model = AutoModelForCausalLM.from_pretrained(self.tokenizer_dir, token=self.auth_token,device_map=self.config["device"],trust_remote_code=self.config["trust_remote"])
         self.tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_dir,token=self.auth_token)
-    
+
     def train(self, train_data, **kwargs):
         preprocessed_data = []
         for x, y in zip(train_data.x, train_data.y):
-            sample = type('Sample', (object,), {'x': x, 'y': y})()
-            processed_sample = self.preprocess(sample, self.MAX_LENGTH, self.tokenizer)
+            processed_sample = self.preprocess(str(x), str(y), self.MAX_LENGTH, self.tokenizer)
             preprocessed_data.append(processed_sample)
 
         train_dataset = datasets.Dataset.from_dict({
-        "input_ids": [d["input_ids"][1] for d in preprocessed_data],  
-        "attention_mask": [d["attention_mask"][1] for d in preprocessed_data],
-        "labels": [d["labels"][1] for d in preprocessed_data]
+        "input_ids": [d["input_ids"] for d in preprocessed_data],
+        "attention_mask": [d["attention_mask"] for d in preprocessed_data],
+        "labels": [d["labels"] for d in preprocessed_data]
         })
         config_lora=LoraConfig(task_type=TaskType.CAUSAL_LM,
-                    lora_alpha = 1,
-                    lora_dropout = 0.0
+                    r=16,
+                    lora_alpha = 32,
+                    lora_dropout = 0.05
                     )
         model=get_peft_model(self.model,config_lora)
         half = self.train_config["half_lora"]
@@ -64,12 +64,21 @@ class BaseModel:
         trainer.train()
         self.model = trainer.model
         return self.model
-    
+
     from transformers import pipeline
     def predict(self, data, **kwargs):
-        pipe=pipeline("text2text-generation",model=self.model,tokenizer=self.tokenizer)
-        y_pred = pipe(data)
-        return y_pred
+        results = []
+        for text in data:
+            prompt="\n".join(["user: ", str(text)])+"\n\nassistant: "
+            inputs=self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=self.MAX_LENGTH)
+            input_len=inputs["input_ids"].shape[1]
+            with torch.no_grad():
+                outputs=self.model.generate(**inputs, max_new_tokens=8, pad_token_id=self.tokenizer.eos_token_id)
+            new_tokens=outputs[0][input_len:]
+            decoded=self.tokenizer.decode(new_tokens, skip_special_tokens=True)
+            decoded=decoded.strip().split()[0] if decoded.strip() else decoded
+            results.append(decoded)
+        return results
 
 
     def evaluate(self, data, **kwargs):
@@ -83,22 +92,22 @@ class BaseModel:
     def save(self, model_path = None):
         pass
 
-    
-    def preprocess(self, samples, MAX_LENGTH, tokenizer):
+
+    def preprocess(self, prompt=None, plan=None, MAX_LENGTH=None, tokenizer=None):
+        if prompt is None:
+            return None
         input_ids,attention_mask,labels=[],[],[]
-        prompt=samples.x 
-        plan=samples.y
         instruction=tokenizer("\n".join(["user: ",prompt])+"\n\nassistant: ",add_special_tokens=False)
         response=tokenizer(plan,add_special_tokens=False)
         input_ids=instruction["input_ids"]+response["input_ids"]+[tokenizer.eos_token_id]
         attention_mask=instruction["attention_mask"]+response["attention_mask"]+[1]
-        labels=len(instruction["input_ids"])*[-100]+response["input_ids"]+[tokenizer.eos_token_id] 
+        labels=len(instruction["input_ids"])*[-100]+response["input_ids"]+[tokenizer.eos_token_id]
         if len(labels)>MAX_LENGTH:
             input_ids=input_ids[:MAX_LENGTH]
             attention_mask=attention_mask[:MAX_LENGTH]
             labels=labels[:MAX_LENGTH]
         return {
-            "input_ids":[[None],input_ids],
-            "attention_mask":[[None],attention_mask],
-            "labels":[[None],labels]
+            "input_ids":input_ids,
+            "attention_mask":attention_mask,
+            "labels":labels
         }

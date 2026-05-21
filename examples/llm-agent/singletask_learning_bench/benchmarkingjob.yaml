@@ -6,7 +6,7 @@ benchmarkingjob:
 
   # the url address of test environment configuration file; string type;
   # the file format supports yaml/yml;
-  testenv: "./examples/LLM-Agent-Benchmark/singletask_learning_bench/testenv/testenv.yaml"
+  testenv: "./examples/llm-agent/singletask_learning_bench/testenv/testenv.yaml"
 
   # the configuration of test object
   test_object:
@@ -19,7 +19,7 @@ benchmarkingjob:
       - name: "LLM_agent"
         # the url address of test algorithm configuration file; string type;
         # the file format supports yaml/yml
-        url: "./examples/LLM-Agent-Benchmark/singletask_learning_bench/testalgorithms/test_algorithm.yaml"
+        url: "./examples/llm-agent/singletask_learning_bench/testalgorithms/test_algorithm.yaml"
 
   # the configuration of ranking leaderboard
   rank:
