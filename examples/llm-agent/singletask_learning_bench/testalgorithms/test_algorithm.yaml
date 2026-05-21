@@ -5,12 +5,12 @@ algorithm:
   modules:
     - type: "basemodel"
       name: "LLM_agent"
-      url: "./examples/LLM-Agent-Benchmark/singletask_learning_bench/testalgorithms/basemodel.py"
+      url: "./examples/llm-agent/singletask_learning_bench/testalgorithms/basemodel.py"
 
       hyperparameters:
         - config:
             values:
-              - "./examples/LLM-Agent-Benchmark/config/config.json"
+              - "./examples/llm-agent/config/config.json"
         - train_config:
             values:
-              - "./examples/LLM-Agent-Benchmark/config/train_config.json"
+              - "./examples/llm-agent/config/train_config.json"

@@ -3,36 +3,34 @@ import numpy as np
 from sedna.common.class_factory import ClassType, ClassFactory
 from transformers import AutoTokenizer,AutoModelForCausalLM
 import logging
+from rouge_score import rouge_scorer
 
 @ClassFactory.register(ClassType.GENERAL, alias="rouge1")
 def rouge1(y_true, y_pred, **kwargs):
-    rouge=evaluate.load('./examples/LLM-Agent-Benchmark/evaluate/metrics/rouge')
-    y_prednew=[]
-    for i in range(len(y_pred)):
-        y_prednew.append(y_pred[i]["generated_text"])
-    rou_score = rouge.compute(predictions = y_prednew, references=y_true, use_aggregator=True)
-    rouge1 = rou_score['rouge1'] * 10
-    return rouge1
+    scorer=rouge_scorer.RougeScorer(['rouge1'], use_stemmer=True)
+    y_prednew=[str(item) for item in y_pred]
+    scores=[scorer.score(ref, pred)['rouge1'].fmeasure for ref, pred in zip(y_true, y_prednew)]
+    if not scores:
+        return 0.0
+    return (sum(scores) / len(scores)) * 10
 
 @ClassFactory.register(ClassType.GENERAL, alias="rouge2")
 def rouge2(y_true, y_pred, **kwargs):
-    rouge=evaluate.load('./examples/LLM-Agent-Benchmark/evaluate/metrics/rouge')
-    y_prednew=[]
-    for i in range(len(y_pred)):
-        y_prednew.append(y_pred[i]["generated_text"])
-    rou_score = rouge.compute(predictions = y_prednew, references=y_true, use_aggregator=True)
-    rouge2 = rou_score['rouge2'] * 10
-    return rouge2
+    scorer=rouge_scorer.RougeScorer(['rouge2'], use_stemmer=True)
+    y_prednew=[str(item) for item in y_pred]
+    scores=[scorer.score(ref, pred)['rouge2'].fmeasure for ref, pred in zip(y_true, y_prednew)]
+    if not scores:
+        return 0.0
+    return (sum(scores) / len(scores)) * 10
 
 @ClassFactory.register(ClassType.GENERAL, alias="rougeL")
 def rougeL(y_true, y_pred, **kwargs):
-    rouge=evaluate.load('./examples/LLM-Agent-Benchmark/evaluate/metrics/rouge')
-    y_prednew=[]
-    for i in range(len(y_pred)):
-        y_prednew.append(y_pred[i]["generated_text"])
-    rou_score = rouge.compute(predictions = y_prednew, references=y_true, use_aggregator=True)
-    rougeL = rou_score['rougeL'] * 10
-    return rougeL
+    scorer=rouge_scorer.RougeScorer(['rougeL'], use_stemmer=True)
+    y_prednew=[str(item) for item in y_pred]
+    scores=[scorer.score(ref, pred)['rougeL'].fmeasure for ref, pred in zip(y_true, y_prednew)]
+    if not scores:
+        return 0.0
+    return (sum(scores) / len(scores)) * 10
 
 def calculate_mean(lst):
     logging.info(lst)
