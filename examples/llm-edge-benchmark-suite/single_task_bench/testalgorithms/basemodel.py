@@ -89,7 +89,7 @@ class LlamaCppModel:
         import re
         timings = {}
         for line in stdout_output.split('\n'):
-            match = re.match(r'llama_print_timings:\s*(.+?)\s*=\s*([0-9\.]+)\s*ms', line)
+            match = re.match(r'llama_(?:print_timings|perf_context_print):\s*(.+?)\s*=\s*([0-9\.]+)\s*ms', line)
             if match:
                 key = match.group(1).strip()
                 value = float(match.group(2))
