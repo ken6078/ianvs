@@ -42,6 +42,7 @@ class Rank:
             "hyperparameters": ["all"],
             "metrics": ["all"],
         }
+        self.selected_output_columns: list = []
         self.save_mode: str = "selected_and_all"
 
         self.all_df_header = None
@@ -219,6 +220,8 @@ class Rank:
         paradigms = self.selected_dataitem.get("paradigms")
         if paradigms != ["all"]:
             selected_df = selected_df.loc[selected_df["paradigm"].isin(paradigms)]
+        if self.selected_output_columns:
+            selected_df = selected_df.loc[:, self.selected_output_columns]
         return selected_df
 
     def _save_selected(self, test_cases, test_results):

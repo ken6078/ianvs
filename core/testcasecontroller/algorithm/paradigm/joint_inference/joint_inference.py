@@ -87,21 +87,32 @@ class JointInference(ParadigmBase):
             self.inference_dataset = dataset_processor(self.inference_dataset)
 
         # validate module instances
-        required_modules = {"edgemodel", "cloudmodel", "hard_example_mining"}
-
-        if not required_modules.issubset(set(self.module_instances.keys())):
-            raise KeyError(
-                f"Required modules: {required_modules}, "
-                f"but got: {self.module_instances.keys()}"
-            )
+        if self.hard_example_mining_mode == "mining-free":
+            required_modules = {"drafter", "verifier"}
+            instance_keys = set(self.module_instances.keys())
+            if not required_modules.issubset(instance_keys):
+                raise KeyError(
+                    f"Required mining-free modules: {required_modules}, "
+                    f"but got: {self.module_instances.keys()}"
+                )
+        else:
+            required_modules = {"edgemodel", "cloudmodel"}
+            if self.hard_example_mining_mode != "self-design":
+                required_modules.add("hard_example_mining")
+            if not required_modules.issubset(set(self.module_instances.keys())):
+                raise KeyError(
+                    f"Required modules: {required_modules}, "
+                    f"but got: {self.module_instances.keys()}"
+                )
 
         # if hard example mining is OracleRouter,
         # add the edgemodel and cloudmodel object to its kwargs so that it can use them.
-        mining = self.module_instances["hard_example_mining"]
-        param = mining.get("param")
-        if mining.get("method", None) == "OracleRouter":
-            param["edgemodel"] = self.module_instances["edgemodel"]
-            param["cloudmodel"] = self.module_instances["cloudmodel"]
+        if "hard_example_mining" in self.module_instances:
+            mining = self.module_instances["hard_example_mining"]
+            param = mining.get("param")
+            if mining.get("method", None) == "OracleRouter":
+                param["edgemodel"] = self.module_instances["edgemodel"]
+                param["cloudmodel"] = self.module_instances["cloudmodel"]
 
     def run(self):
         """
@@ -162,15 +173,11 @@ class JointInference(ParadigmBase):
         """
         results = []
 
-        cloud_count, edge_count = 0,0
+        cloud_count, edge_count, collaboration_count = 0, 0, 0
 
         LOGGER.info("Inference Start")
 
-        pbar = tqdm(
-            self.inference_dataset.x,
-            total=len(self.inference_dataset.x),
-            ncols=100
-        )
+        pbar = tqdm(self.inference_dataset.x, total=len(self.inference_dataset.x), ncols=100)
 
         for data in pbar:
             # inference via sedna JointInference API
@@ -179,12 +186,40 @@ class JointInference(ParadigmBase):
                 mining_mode=self.hard_example_mining_mode
             )
 
-            if infer_res[2]:
-                edge_count += 1
-            elif infer_res[3]:
-                cloud_count += 1
+            edge_result = None
+            cloud_result = None
+            routed_to = None
+            if isinstance(infer_res, (list, tuple)):
+                result_payload = infer_res[1] if len(infer_res) > 1 else None
+                if len(infer_res) > 2:
+                    edge_result = infer_res[2]
+                if len(infer_res) > 3:
+                    cloud_result = infer_res[3]
+                if isinstance(result_payload, dict):
+                    simulation = result_payload.get("simulation", {}) or {}
+                    routed_to = simulation.get("routed_to")
+            elif isinstance(infer_res, dict):
+                simulation = infer_res.get("simulation", {}) or {}
+                routed_to = simulation.get("routed_to")
+                if routed_to == "edge":
+                    edge_result = infer_res
+                elif routed_to == "cloud":
+                    cloud_result = infer_res
 
-            pbar.set_postfix({"Edge": edge_count, "Cloud": cloud_count})
+            if edge_result:
+                edge_count += 1
+            elif cloud_result:
+                cloud_count += 1
+            elif routed_to == "collaboration":
+                collaboration_count += 1
+
+            pbar.set_postfix(
+                {
+                    "Edge": edge_count,
+                    "Cloud": cloud_count,
+                    "Collab": collaboration_count,
+                }
+            )
 
             results.append(infer_res)
 
