@@ -68,16 +68,16 @@ def resolve_changed_files(
 ) -> List[str]:
     head = head_sha or "HEAD"
 
-    if compare_ref and git_ref_exists(compare_ref):
-        merge_base = git_output(["merge-base", compare_ref, head])
-        return git_lines(["diff", "--name-only", merge_base, head])
-
     if event_name == "pull_request" and base_sha:
         return git_lines(["diff", "--name-only", base_sha, head])
 
     if event_name == "push" and base_sha:
         if base_sha != "0000000000000000000000000000000000000000":
             return git_lines(["diff", "--name-only", base_sha, head])
+
+    if compare_ref and git_ref_exists(compare_ref):
+        merge_base = git_output(["merge-base", compare_ref, head])
+        return git_lines(["diff", "--name-only", merge_base, head])
 
     return git_lines(["ls-files", "examples", "tool", ".github/workflows/static-validator.yml"])
 
