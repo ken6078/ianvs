@@ -1,0 +1,81 @@
+name: Static Validator
+
+on:
+  pull_request:
+    paths:
+      - "examples/**"
+      - "tool/**"
+      - ".github/workflows/static-validator.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "examples/**"
+      - "tool/**"
+      - ".github/workflows/static-validator.yml"
+  workflow_dispatch:
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-22.04
+    outputs:
+      run_all: ${{ steps.detect.outputs.run_all }}
+      examples_json: ${{ steps.detect.outputs.examples_json }}
+      examples_count: ${{ steps.detect.outputs.examples_count }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v3
+        with:
+          python-version: "3.9"
+
+      - name: Detect changed examples
+        id: detect
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          GITHUB_SHA: ${{ github.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          python tool/detect_changed_examples.py \
+            --repo-root . \
+            --event-name "${EVENT_NAME}" \
+            --base-sha "${PR_BASE_SHA:-${PUSH_BEFORE_SHA}}" \
+            --head-sha "${GITHUB_SHA}" > changed_examples.json
+          python tool/export_changed_examples_outputs.py --report changed_examples.json
+
+  validate:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.examples_count != '0' }}
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: [ 3.9 ]
+        example: ${{ fromJson(needs.detect-changes.outputs.examples_json) }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v3
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install validator dependencies
+        run: python -m pip install -r tool/requirements.txt
+
+      - name: Run static validator
+        run: python tool/static_validator.py --root . --example "${{ matrix.example }}"
+
+  no-changes:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.examples_count == '0' }}
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Skip validation
+        run: echo "No example changes detected for static validation."
