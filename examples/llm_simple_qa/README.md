@@ -61,24 +61,29 @@ The data of simple-qa example structure is:
 
 ### Prepare Environment
 
-You need to install the changed-sedna package, which added `JsonlDataParse` in `sedna.datasources`
+Install the example dependencies first:
 
-Replace the file in `yourpath/anaconda3/envs/ianvs/lib/python3.x/site-packages/sedna` with `examples/resources/sedna-with-jsonl.zip`
+`pip install -r examples/llm_simple_qa/requirements.txt`
+
+Install Sedna from the bundled wheel:
+
+`pip install resources/third_party/sedna-0.6.0.1-py3-none-any.whl`
 
 
 ### Run Ianvs
 
 Run the following command:
 
-`ianvs -f examples/llm/singletask_learning_bench/simple_qa/benchmarkingjob.yaml`
+`ianvs -f examples/llm_simple_qa/benchmarkingjob.yaml`
 
 ## OpenCompass Evaluation
 
 ### Prepare Environment
 
-`pip install examples/resources/opencompass-0.2.5-py3-none-any.whl`
+Install OpenCompass from the bundled wheel:
+
+`pip install resources/third_party/sedna-0.6.0.1-py3-none-any.whl`
 
 ### Run Evaluation
 
-`python run_op.py examples/llm/singletask_learning_bench/simple_qa/testalgorithms/gen/op_eval.py`
-
+`python run_op.py examples/llm_simple_qa/testalgorithms/gen/op_eval.py`
