@@ -96,7 +96,7 @@ issue测试集部分内容格式如下：
 对于issue部分的数据格式，还需要再讨论一下
 
 ## BenchMark格式示例
-[引用陈孟卓部分的benchMark](https://github.com/IcyFeather233/ianvs/blob/main/docs/proposals/scenarios/llm-benchmarks/llm-benchmarks.md)
+[引用陈孟卓部分的benchMark](https://github.com/IcyFeather233/ianvs/blob/main/docs/proposals/scenarios/phase-2-core-benchmark/llm-benchmarks/llm-benchmarks.md)
 
 
 ### 具体步骤
@@ -112,7 +112,6 @@ issue测试集部分内容格式如下：
 | 7月13号-8月上旬 | 阅读相关论文；搜集数据集，阅读并了解开源项目，写出相应的项目产品文档，需求文档，需求文档需包含对应项目的command、issue、PR等关键点 |
 | 8月中旬-9月上旬  | 对于已搜集的数据集进行整理，并且扩大搜集范围，扩充数据集，编写针对该数据集，大模型的测试评价指标                         |
 | 9月中旬-9月底   | 编写单元测试/集成测试，测试驱动保证代码正确性                                                  |
-
 
 
 

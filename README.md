@@ -67,7 +67,7 @@ Follow the [Ianvs installation document](docs/guides/how-to-install-ianvs.md) to
 
 ### Examples
 
-- Scenario PCB-AoI：[Industrial Defect Detection on the PCB-AoI Dataset](docs/proposals/scenarios/industrial-defect-detection/pcb-aoi.md).
+- Scenario PCB-AoI：[Industrial Defect Detection on the PCB-AoI Dataset](docs/proposals/scenarios/phase-3-advanced-scenarios/industrial-defect-detection/pcb-aoi.md).
 
   - Example PCB-AoI-1：[Testing single task learning in industrial defect detection](docs/proposals/test-reports/testing-single-task-learning-in-industrial-defect-detection-with-pcb-aoi.md).
 
@@ -83,7 +83,7 @@ Follow the [Ianvs installation document](docs/guides/how-to-install-ianvs.md) to
 
   - Example Cityscapes-Synthia-4: [Integrating GAN and Self-taught Learning into Ianvs Lifelong Learning](examples/cityscapes/lifelong_learning_bench/unseen_task_processing-GANwithSelfTaughtLearning/README.md)
 
-- Scenario Cloud-Robotics: [Semantic Segmentation on Cloud-Robotics Dataset](docs/proposals/scenarios/Cloud-Robotics/Cloud-Robotics_zh.md)
+- Scenario Cloud-Robotics: [Semantic Segmentation on Cloud-Robotics Dataset](docs/proposals/scenarios/phase-3-advanced-scenarios/Cloud-Robotics/Cloud-Robotics_zh.md)
 
   - Example Cloud-Robotics-1: [Lifelong learning in semantic segmentation](examples/robot/lifelong_learning_bench/semantic-segmentation/README.md)
 

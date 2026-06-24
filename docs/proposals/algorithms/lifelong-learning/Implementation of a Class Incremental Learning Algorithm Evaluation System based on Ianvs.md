@@ -138,7 +138,7 @@ As shown in the table below, this dataset contains 7 groups and 30 classes.
 |    nature    |                     vegetation · terrain                     |
 |     sky      |                             sky                              |
 
-More detail about CR dataset please refer to [this link](https://github.com/kubeedge/ianvs/blob/main/docs/proposals/scenarios/Cloud-Robotics/Cloud-Robotics_zh.md).
+More detail about CR dataset please refer to [this link](https://github.com/kubeedge/ianvs/blob/main/docs/proposals/scenarios/phase-3-advanced-scenarios/Cloud-Robotics/Cloud-Robotics_zh.md).
 
 ### 3.3 File-level Design
 
