@@ -755,6 +755,12 @@ Checks:
 * Lightweight smoke test
 * README consistency
 
+Exception:
+
+* If a changed example is too large or too time-consuming to run within the
+CI runner limits, Tier 1 may skip the full runtime smoke test for that
+example.
+
 Example:
 
 ```text
@@ -824,6 +830,53 @@ PR impact:
 * Does not automatically block unrelated PRs.
 * Updates the example health report.
 * Creates or references maintenance issues if configured by maintainers.
+
+---
+
+### Validation-Level Detection Workflow
+
+The validation framework should make it easy to see which kinds of repository changes trigger which validation tiers. Pull request validation should begin by scanning changed files and mapping the detected change scope to the appropriate tier combination. Documentation-only changes should run Tier 0 static validation only. Changes within a single example should run Tier 0 plus Tier 1 for that example. Changes in Ianvs core code, shared validation code, workflows, or other shared components should run Tier 0 plus Tier 2 for affected or representative examples.
+
+Scheduled validation should follow a separate trigger path. Instead of scanning pull request changes, it should scan the broader example inventory and run Tier 0 plus Tier 3 scheduled validation for the selected example set. In all cases, the resulting failures should pass through the same classification and reporting pipeline so maintainers can compare outcomes consistently across PR-triggered and time-triggered validation.
+
+```mermaid
+flowchart TD
+    prTrigger([PR Changes Trigger])
+    scheduleTrigger([Periodic Validation Trigger])
+
+    scanChangedFiles[Scan Changed Files]
+    scanAllExamples[Scan All Examples]
+
+    detectExampleChanges{Example Files Changed?}
+
+    tier01[Tier 0<br/>Static Validation]
+    tier02[Tier 0<br/>Static Validation]
+    tier03[Tier 0<br/>Static Validation]
+    tier04[Tier 0<br/>Static Validation]
+    tier1[Tier 1<br/>Changed Example Validation]
+    tier2[Tier 2<br/>Affected Example Validation]
+    tier3[Tier 3<br/>Scheduled Validation]
+
+    classifyFailure[Classify Failure]
+
+    generateReport[Generate Validation Report]
+    publishReport[Publish Report / CI Artifact]
+
+    prTrigger --> scanChangedFiles --> detectExampleChanges
+
+    detectExampleChanges -->|Only Document| tier01
+    detectExampleChanges -->|Single Example| tier02 --> tier1
+    detectExampleChanges -->|Core code / Shared code| tier03 --> tier2
+
+    scheduleTrigger --> scanAllExamples --> tier04 --> tier3
+
+    tier01 --> classifyFailure
+    tier1 --> classifyFailure
+    tier2 --> classifyFailure
+    tier3 --> classifyFailure
+
+    classifyFailure --> generateReport --> publishReport
+```
 
 ---
 
@@ -1046,6 +1099,52 @@ CI validates the same rules
 Maintainer receives validation report
 ```
 
+The local validation workflow should follow the same comparison model as CI so that changed-file detection and affected-example selection stay consistent. Before validation starts, the local tooling should check whether an `upstream` remote exists for `kubeedge/ianvs`. If it does not exist, the tool should add it. If it already exists, the tool should reuse the configured remote. The tool should then fetch `upstream/main`, select the current `upstream/main` head as the validation target, compute the merge-base between that target and the contributor's local `HEAD`, and detect changed files from the merge-base to the local `HEAD`.
+
+After change detection, the local workflow should create a temporary validation branch and rebase that branch onto `upstream/main` so contributors can validate the effective post-rebase state before opening or updating a pull request. Validation should then run against that rebased temporary branch. If validation completes successfully, the temporary branch should be deleted as part of cleanup.
+
+```mermaid
+flowchart TD
+    Start([Start Validation])
+
+    CheckUpstream{Check upstream remote}
+    AddUpstream[Add upstream remote<br/>kubeedge/ianvs]
+    UseUpstream[Use existing<br/>upstream remote]
+
+    FetchUpstream[Fetch upstream/main]
+    SelectTarget[Select target<br/>upstream/main HEAD]
+    FindMergeBase[Find merge-base]
+    DetectChanges[Detect changed files<br/>merge-base to local HEAD]
+
+    CreateValidationBranch[Create temporary validation branch]
+    RebaseValidationBranch[Rebase validation branch onto<br/>upstream/main HEAD]
+
+    RunValidation[Run validation]
+    ReportValidation[Report validation result]
+    CleanupSuccess[Delete validation branch]
+
+    End([End])
+
+    Start --> CheckUpstream
+
+    CheckUpstream -- No --> AddUpstream
+    CheckUpstream -- Yes --> UseUpstream
+
+    AddUpstream --> FetchUpstream
+    UseUpstream --> FetchUpstream
+
+    FetchUpstream --> SelectTarget
+    SelectTarget --> FindMergeBase
+    FindMergeBase --> DetectChanges
+
+    DetectChanges --> CreateValidationBranch
+    CreateValidationBranch --> RebaseValidationBranch
+    RebaseValidationBranch --> RunValidation
+    RunValidation --> ReportValidation
+    ReportValidation --> CleanupSuccess
+    CleanupSuccess --> End
+```
+
 Local validation commands:
 
 ```bash
@@ -1217,6 +1316,8 @@ Deliverable:
 ### FR-6 Local Developer Validation
 
 The system shall provide local commands for contributors. It shall also document how contributors can locally execute the relevant GitHub Actions workflows before pushing changes, for example by using `nektos/act` directly or through a VS Code integration such as `github-local-actions`.
+
+The local validation flow shall also detect changed files relative to the current `upstream/main` merge-base and support validation from a temporary branch rebased onto `upstream/main`, so contributors can reproduce the same effective comparison model used by pull request validation.
 
 Deliverable:
 
