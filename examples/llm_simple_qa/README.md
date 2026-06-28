@@ -49,9 +49,9 @@ Run the following command:
 
 ### Prepare Environment
 
-Install OpenCompass from the bundled wheel:
+Install OpenCompass from pip:
 
-`pip install resources/third_party/sedna-0.6.0.1-py3-none-any.whl`
+`pip install -U opencompass`
 
 ### Run Evaluation
 
