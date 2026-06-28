@@ -8,6 +8,10 @@ Run the dataset preparation script:
 
 `python examples/llm_simple_qa/scripts/prepare_dataset.py`
 
+To control the number of generated test rows:
+
+`python examples/llm_simple_qa/scripts/prepare_dataset.py --num-samples 1`
+
 The script creates the following structure by default:
 
 ```
@@ -20,7 +24,9 @@ The script creates the following structure by default:
 
 `train_data/data.jsonl` is empty.
 
-`test_data/data.jsonl` contains three JSONL rows, one JSON object per line:
+`test_data/data.jsonl` contains generated JSONL rows, one JSON object per line. By default it writes 10 rows; `--num-samples` can shrink or expand that count.
+
+Example output for `--num-samples 3`:
 
 ```json
 {"question":"If Xiao Ming has 5 apples, and he gives 3 to Xiao Hua, how many apples does Xiao Ming have left?\nA. 2\nB. 3\nC. 4\nD. 5","answer":"A"}

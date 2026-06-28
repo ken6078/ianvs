@@ -56,6 +56,18 @@ def _write_jsonl(path: Path, rows):
             fout.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
+def _build_sample_rows(num_samples: int):
+    if num_samples < 0:
+        raise ValueError("num_samples must be greater than or equal to 0")
+    if num_samples == 0:
+        return []
+
+    full_repeats, remainder = divmod(num_samples, len(SAMPLE_ROWS))
+    rows = SAMPLE_ROWS * full_repeats
+    rows.extend(SAMPLE_ROWS[:remainder])
+    return rows
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Prepare the llm_simple_qa dataset in Ianvs example layout."
@@ -66,7 +78,17 @@ def main():
         default=Path("./dataset/llm_simple_qa"),
         help="Destination dataset root. Defaults to ./dataset/llm_simple_qa.",
     )
+    parser.add_argument(
+        "--num-samples",
+        type=int,
+        default=len(SAMPLE_ROWS),
+        help=(
+            "Number of test samples to generate. Defaults to the number of built-in "
+            f"sample rows ({len(SAMPLE_ROWS)})."
+        ),
+    )
     args = parser.parse_args()
+    sample_rows = _build_sample_rows(args.num_samples)
 
     train_dir = args.dataset_root / "train_data"
     test_dir = args.dataset_root / "test_data"
@@ -77,13 +99,13 @@ def main():
     test_path = test_dir / "data.jsonl"
 
     train_path.write_text("", encoding="utf-8")
-    _write_jsonl(test_path, SAMPLE_ROWS)
+    _write_jsonl(test_path, sample_rows)
 
     summary = {
         "dataset_root": str(args.dataset_root),
         "train_data": str(train_path),
         "test_data": str(test_path),
-        "test_size": len(SAMPLE_ROWS),
+        "test_size": len(sample_rows),
     }
     json.dump(summary, sys.stdout, ensure_ascii=False, indent=2)
     sys.stdout.write("\n")
