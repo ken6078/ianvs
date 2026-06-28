@@ -2,6 +2,12 @@ name: LLM Simple QA E2E
 
 on:
   workflow_dispatch:
+    inputs:
+      smoke:
+        description: Run the llm_simple_qa workflow in smoke-test mode
+        required: false
+        type: boolean
+        default: true
 
 jobs:
   llm-simple-qa-e2e:
@@ -38,7 +44,11 @@ jobs:
 
       - name: Prepare llm_simple_qa dataset
         run: |
-          python examples/llm_simple_qa/scripts/prepare_dataset.py
+          if [ "${{ inputs.smoke }}" = "true" ]; then
+            python examples/llm_simple_qa/scripts/prepare_dataset.py --smoke
+          else
+            python examples/llm_simple_qa/scripts/prepare_dataset.py
+          fi
 
       - name: Run Ianvs llm_simple_qa example
         env:
