@@ -106,7 +106,7 @@ The proposal contains three major parts:
 
 1. Example inventory and classification
 2. CI validation framework
-3. Reporting and developer feedback system
+3. Reporting and contributor feedback system
 
 The CI framework shall detect examples affected by a pull request and execute the corresponding validation workflow only for those examples.
 
@@ -243,6 +243,7 @@ The CI pipeline mainly interacts with:
 * model configuration
 * runtime execution commands
 * evaluation metric files
+* related documents
 
 The first version should avoid core Ianvs changes. Core changes should only be considered when multiple examples fail due to the same framework-level behavior, and such changes should be discussed separately.
 
@@ -265,15 +266,15 @@ The interaction is:
 
 ```mermaid
 sequenceDiagram
-    participant Developer as new Developer
+    participant Contributor as new Contributor
     participant GitHub
     participant Bot
 
-    Developer->>+GitHub: Pull Request
+    Contributor->>+GitHub: Pull Request
     GitHub->>+Bot: [Webhook] new Pull Request
     Bot->>-GitHub: [API] Approve workflow
     GitHub->>GitHub: Run workflow
-    GitHub-->>-Developer: Result
+    GitHub-->>-Contributor: Result
 ```
 
 In this design, workflow approval is based on path-level risk classification:
@@ -315,6 +316,7 @@ Ianvs Repository
 │   └── example_validation/
 │       ├── validation_rules.md
 │       ├── classification_policy.md
+│       ├── example_status.md
 │       └── local_validation.md
 │
 └── .github/
@@ -338,6 +340,7 @@ The responsibilities of the proposed files are:
 | `tools/example_validation/report_generator.py` | Converts validation results into human-readable CI summaries and example health reports, including failure classifications, reproduction commands, and suggested next actions for contributors and maintainers. |
 | `docs/example_validation/validation_rules.md` | Documents the validation rules implemented by the framework, including what each validator checks, why the rule exists, and how maintainers should interpret its result. |
 | `docs/example_validation/classification_policy.md` | Defines the example status model and failure classification policy, including which failure types block pull requests and which should be treated as known, pre-existing, or time-based failures. |
+| `docs/example_validation/example_status.md` | Serves as the maintainer-facing summary of current example health. It should present the latest classified status for examples, link or point to the underlying CI evidence when needed, and provide a stable place to track whether an example is validated, degraded, quarantined, external-resource-dependent, or awaiting follow-up repair work. |
 | `docs/example_validation/local_validation.md` | Documents how contributors run validation locally, including example commands, expected usage patterns, local troubleshooting, and optional workflow-level local verification guidance. |
 | `.github/workflows/example_validation.yml` | Defines the GitHub Actions workflow that runs the validation tiers, collects results, and publishes CI summaries or report artifacts. |
 
@@ -1031,7 +1034,7 @@ config:
 ---
 
 flowchart TD
-    Developer[Developer] --> SubmitPR[Submit Pull Request]
+    Contributor[Contributor] --> SubmitPR[Submit Pull Request]
     SubmitPR --> CheckFile
 
     subgraph ReviewBot[Review Bot]
@@ -1083,10 +1086,10 @@ Maintainer decides whether to quarantine, skip, or create follow-up issue
 
 ---
 
-## Local Developer Flow
+## Local Contributor Flow
 
 ```text
-Developer modifies an example
+Contributor modifies an example
         ↓
 Runs local validation command
         ↓
@@ -1159,7 +1162,7 @@ For workflow-level verification, contributors should also be able to run the rel
 
 For contributors who use VS Code, the proposal should also mention the `github-local-actions` extension as a convenient local entry point for running or debugging GitHub Actions jobs backed by `act`. This helps contributors validate workflow behavior before opening a pull request, especially when they changed example validation scripts, workflow definitions, or shared tooling used by CI.
 
-This ensures that CI is not only a maintenance tool but also a developer workflow tool.
+This ensures that CI is not only a maintenance tool but also a contributor workflow tool.
 
 ### Maintainer Example Status Flow
 
@@ -1313,7 +1316,7 @@ Deliverable:
 
 ---
 
-### FR-6 Local Developer Validation
+### FR-6 Local Contributor Validation
 
 The system shall provide local commands for contributors. It shall also document how contributors can locally execute the relevant GitHub Actions workflows before pushing changes, for example by using `nektos/act` directly or through a VS Code integration such as `github-local-actions`.
 
@@ -1594,7 +1597,7 @@ Deliverable:
 
 Title:
 
-* Documentation for Validation and Developer Workflow
+* Documentation for Validation and Contributor Workflow
 
 Goal:
 
@@ -1613,7 +1616,7 @@ Tasks:
 
 Deliverable:
 
-* Developer Validation Guide and Example Classification Policy Documentation
+* Contributor Validation Guide and Example Classification Policy Documentation
 
 ---
 
@@ -1655,7 +1658,7 @@ The project will be considered successful if:
 6. CI can detect local model paths and CUDA-only assumptions for `examples/llm_simple_qa`.
 7. CI can run smoke tests for selected examples.
 8. CI produces readable classification reports.
-9. Local developers can run validation scripts.
+9. Contributors can run validation scripts.
 10. Maintainers can use CI results during PR review.
 11. CI uses tiered validation instead of running every example on every PR.
 12. CI can distinguish PR regressions from known or time-based failures.
