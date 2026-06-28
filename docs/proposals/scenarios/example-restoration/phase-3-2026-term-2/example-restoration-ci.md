@@ -1487,162 +1487,39 @@ Create separate follow-up issue if repair is needed
 
 ## Roadmap
 
-### Milestone 1 — Jun 15–Jun 21, 2026
+### Early Phase — Jun 15–Jul 19, 2026
 
-Title:
+Focus:
 
-* Example Inventory and CI Design
+* Documentation, example classification, validation rules, and implementation planning.
 
-Goal:
+Outcome:
 
-* Define classification scope and CI validation strategy.
-
-Tasks:
-
-* Review existing examples and recent example-related PRs.
-* Build example inventory.
-* Classify examples by validation status.
-* Define validation levels.
-* Draft CI architecture.
-* Define tiered validation policy.
-* Define out-of-scope repair policy.
-* Add `examples/llm_simple_qa` as the initial validation and repair target example.
-* Record known `llm_simple_qa` validation blockers and map each blocker to a restoration task.
-
-Deliverable:
-
-* Example Classification Matrix and CI Architecture Proposal
+* Example classification matrix, CI architecture proposal, and a clear implementation plan for the validation framework and `llm_simple_qa` restoration.
 
 ---
 
-### Milestone 2 — Jun 22–Jul 5, 2026
+### Middle Phase — Jul 20–Aug 16, 2026
 
-Title:
+Focus:
 
-* Prototype CI Pipeline and Sample Example Classification
+* Main implementation of the CI framework and restoration of `examples/llm_simple_qa`.
 
-Goal:
+Outcome:
 
-* Build the first working CI prototype.
-
-Tasks:
-
-* Implement GitHub Actions workflow prototype.
-* Add static path and YAML validation.
-* Add dependency validation.
-* Add dataset and JSONL validation for `examples/llm_simple_qa`.
-* Repair `llm_simple_qa` dataset setup, path references, model configuration, dependency documentation, device fallback, and metric edge cases.
-* Add LLM-specific checks for local model paths and CUDA-only assumptions.
-* Select representative examples for smoke testing.
-* Validate CI behavior across Python versions.
-* Implement changed-example validation.
-
-Deliverable:
-
-* GitHub Actions CI Prototype with automated validation and classification for selected examples
+* A working CI prototype with validation, classification reporting, local contributor guidance, and an initial portable `llm_simple_qa` restoration result.
 
 ---
 
-### Milestone 3 — Jul 6–Jul 19, 2026
+### Late Phase — Aug 17–Sep 14, 2026
 
-Title:
+Focus:
 
-* Midterm Deliverable and Maintainer Review
+* Wrap-up, maintenance guidance, and future work after the main implementation phase.
 
-Goal:
+Outcome:
 
-* Prepare midterm-ready validation and classification work.
-
-Tasks:
-
-* Refine CI pipeline based on mentor feedback.
-* Create validation rule documentation.
-* Prepare initial CI validation PR.
-* Summarize classified examples and remaining unknowns.
-* Add initial failure classification to CI reports.
-* Validate that `examples/llm_simple_qa` meets clean-environment criteria or record any remaining blockers that require mentor decision.
-
-Deliverable:
-
-* Midterm Report, Initial CI Validation PR, and Example Classification Dashboard
-
----
-
-### Milestone 4 — Jul 20–Aug 2, 2026
-
-Title:
-
-* CI Expansion and Classification Coverage
-
-Goal:
-
-* Expand validation coverage beyond the initial example.
-
-Tasks:
-
-* Add more examples to the validation matrix.
-* Improve dependency and dataset classification.
-* Add more actionable CI classification messages.
-* Add affected-example validation for shared code changes.
-* Mark known failures, skipped examples, and resource-dependent examples.
-* Generalize useful `llm_simple_qa` checks for other LLM examples.
-
-Deliverable:
-
-* Expanded Example Classification Matrix and CI Classification Reports
-
----
-
-### Milestone 5 — Aug 3–Aug 16, 2026
-
-Title:
-
-* Documentation for Validation and Contributor Workflow
-
-Goal:
-
-* Improve documentation for validation usage and classification policy.
-
-Tasks:
-
-* Add local validation command documentation.
-* Document how to run relevant GitHub Actions workflows locally with `nektos/act`.
-* Document optional VS Code-based local workflow validation with `github-local-actions`.
-* Document common CI failure types.
-* Document PR regression, known failure, and maintenance failure policies.
-* Document how maintainers should use classification results.
-* Document how restoration work should be split into separate issues or proposals.
-* Document LLM example validation and restoration rules using `examples/llm_simple_qa` as the first reference.
-
-Deliverable:
-
-* Contributor Validation Guide and Example Classification Policy Documentation
-
----
-
-### Milestone 6 — Aug 17–Aug 25, 2026
-
-Title:
-
-* Final Validation and Project Wrap-up
-
-Goal:
-
-* Finalize CI validation framework and project deliverables.
-
-Tasks:
-
-* Stabilize CI workflow.
-* Finalize example health report.
-* Prepare final project report.
-* Prepare KubeEdge blog draft.
-* Document future maintenance recommendations.
-* Document scheduled validation strategy.
-* Attach final `llm_simple_qa` restoration result, validation status, and remaining follow-up items if any.
-
-Deliverable:
-
-* Final CI Validation Framework, Final Report, Example Health Report, and Blog Draft
+* Final report, example health report, maintenance handover notes, and a future work plan covering broader example onboarding, stronger scheduled validation, and optional workflow-approval automation.
 
 ---
 
