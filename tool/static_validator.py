@@ -24,6 +24,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -508,7 +509,9 @@ class StaticValidator:
         self, example_path: Path, path: Path, line_number: int, line: str
     ) -> None:
         for match in REPO_PATH_RE.finditer(line):
-            value = match.group("path").strip().rstrip(TRAILING_PATH_CHARS)
+            value = self._normalize_readme_repo_path(match.group("path"))
+            if not value:
+                continue
             resolved = self._resolve_local_path(value, path)
             if resolved and not resolved.exists():
                 self._add_issue(
@@ -520,6 +523,21 @@ class StaticValidator:
                     "README references a repository path that does not exist.",
                     value,
                 )
+
+    def _normalize_readme_repo_path(self, value: str) -> str:
+        value = value.strip().rstrip(TRAILING_PATH_CHARS)
+        if not value:
+            return value
+
+        try:
+            tokens = shlex.split(value, posix=True)
+        except ValueError:
+            tokens = value.split()
+
+        if not tokens:
+            return ""
+
+        return tokens[0].rstrip(TRAILING_PATH_CHARS)
 
     def _extract_algorithm_urls(self, job: Dict[str, Any]) -> List[str]:
         test_object = job.get("test_object", {})
