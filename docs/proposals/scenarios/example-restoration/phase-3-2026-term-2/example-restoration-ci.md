@@ -114,7 +114,7 @@ Lightweight static checks will run across relevant examples on every pull reques
 
 A broader validation suite will run on a scheduled basis to detect time-based failures such as dependency drift, dataset unavailability, model download failure, or CI environment changes.
 
-To reduce maintainer overhead, the proposal also adds an automatic review bot for pull requests. When a pull request is opened or updated, the bot will inspect the diff against the `main` branch. If the change does not modify CI-sensitive code such as `.github/` workflows or `tools/` automation, the bot will automatically approve the workflow path so CI can proceed without waiting for manual maintainer action. If CI-sensitive paths are changed, the pull request remains pending for maintainer review and approval.
+A possible future extension is an automatic review bot for pull requests. If maintainers later decide the extra automation is worthwhile, the bot can inspect the diff against the `main` branch and auto-approve workflow execution only when CI-sensitive code such as `.github/` workflows or `tools/` automation is unchanged. Pull requests that touch CI-sensitive paths would still remain pending for maintainer review and approval.
 
 This proposal focuses on classification, validation, reporting, and one concrete restoration target: `examples/llm_simple_qa`. Fixing every broken example, replacing datasets for all examples, or rewriting all outdated documentation is out of scope and should be handled by separate restoration proposals or follow-up issues.
 
@@ -135,7 +135,6 @@ The project will include:
 * Model path and hardware assumption checks for LLM examples
 * Example smoke testing for selected examples
 * GitHub Actions workflow
-* Automatic PR review bot for workflow approval gating
 * Local validation commands
 * Example health reporting
 * Failure classification
@@ -249,7 +248,7 @@ The first version should avoid core Ianvs changes. Core changes should only be c
 
 ### Automatic Workflow Approval Bot
 
-The proposal adds a lightweight GitHub-integrated review bot that reduces the need for maintainers to manually approve workflow execution on pull requests from new contributors.
+As a future extension, the project can add a lightweight GitHub-integrated review bot that reduces the need for maintainers to manually approve workflow execution on pull requests from new contributors.
 
 The bot should:
 
@@ -264,7 +263,18 @@ This bot is not intended to replace code review. Its purpose is only to automate
 
 The interaction is:
 
-![Workflow approval bot sequence diagram](images/bot-sequenceDiagram.png)
+```mermaid
+sequenceDiagram
+    participant Developer as new Developer
+    participant GitHub
+    participant Bot
+
+    Developer->>+GitHub: Pull Request
+    GitHub->>+Bot: [Webhook] new Pull Request
+    Bot->>-GitHub: [API] Approve workflow
+    GitHub->>GitHub: Run workflow
+    GitHub-->>-Developer: Result
+```
 
 In this design, workflow approval is based on path-level risk classification:
 
@@ -939,16 +949,10 @@ The CI report should include:
 
 ## Example Validation Flow
 
-Before the example validation jobs run, the pull request first passes through the workflow approval bot. This ensures that normal contributor changes can enter CI quickly, while changes that affect CI logic still receive maintainer review.
+The core CI flow should work without relying on extra approval automation. If maintainers later adopt the workflow approval bot described in Future Work, it can be inserted as a pre-check ahead of the validation jobs.
 
 ```text
 Pull Request Created
-        ↓
-Workflow Approval Bot Checks Diff Against main
-        ↓
-CI-sensitive paths changed?
-   ├── No  → Auto-approve workflow execution
-   └── Yes → Maintainer approval required
         ↓
 Detect Changed Files
         ↓
@@ -967,7 +971,39 @@ Generate Report
 Maintainer Review
 ```
 
-![Developer and CI review flowchart](images/developer-flowchart.png)
+```mermaid
+---
+config:
+  layout: elk
+---
+
+flowchart TD
+    Developer[Developer] --> SubmitPR[Submit Pull Request]
+    SubmitPR --> CheckFile
+
+    subgraph ReviewBot[Review Bot]
+        CheckFile[Check Change File]
+    end
+
+    CheckFile -->|Safe| TriggerValidation
+    CheckFile -->|Unsafe| Maintainer[Maintainer]
+    Maintainer --> TriggerValidation
+
+    subgraph ExampleRestorationCI[Example Restoration CI System]
+        TriggerValidation[Trigger CI Validation]
+        ScanExamples[Scan Changed and Related Examples]
+        ClassifyIssues[Classify Example Issues]
+
+        TriggerValidation --> ScanExamples
+        ScanExamples --> ClassifyIssues
+    end
+
+    ClassifyIssues --> ReadReport[Read PR Report]
+    ReadReport -->|FAIL| FixIssues[Fix Detected Issues]
+    ReadReport -->|PASS| MergeReady[Merge Ready]
+    FixIssues --> PushUpdates[Push Updates]
+    PushUpdates --> CheckFile
+```
 
 If validation passes:
 
@@ -1007,8 +1043,6 @@ Opens PR
         ↓
 CI validates the same rules
         ↓
-Workflow approval bot checks whether workflow approval can be granted automatically
-        ↓
 Maintainer receives validation report
 ```
 
@@ -1027,6 +1061,36 @@ For workflow-level verification, contributors should also be able to run the rel
 For contributors who use VS Code, the proposal should also mention the `github-local-actions` extension as a convenient local entry point for running or debugging GitHub Actions jobs backed by `act`. This helps contributors validate workflow behavior before opening a pull request, especially when they changed example validation scripts, workflow definitions, or shared tooling used by CI.
 
 This ensures that CI is not only a maintenance tool but also a developer workflow tool.
+
+### Maintainer Example Status Flow
+
+Maintainers also need a simple status-driven workflow after CI has already classified example health. The following diagram mirrors the standalone source in `images/maintainer-example-status-user-flow.md` and shows how a maintainer consumes the generated report, decides whether action is needed, and feeds the result back into example status tracking.
+
+```mermaid
+flowchart TD
+
+    maintainer[Maintainer\nOpens Repository] --> status[Open example_status.md]
+
+    status --> decision{Any Failed Examples?}
+
+    decision -- No --> normal[Continue Normal Maintenance]
+
+    decision -- Yes --> report[Open GitHub Actions Report]
+
+    report --> inspect[Inspect Failure Details]
+
+    inspect --> issue[Create Issue or Request Fix]
+
+    issue --> contributor[Contributor Updates Example]
+
+    contributor --> ci[CI Validation Runs]
+
+    ci --> update[Update example_status.md]
+
+    %% update --> status
+```
+
+This flow complements the contributor and CI flow above. The intent is to make `example_status.md` the maintainer-facing summary, while GitHub Actions reports remain the detailed evidence source for failure triage, follow-up issue creation, and verification after a repair lands.
 
 ---
 
@@ -1594,6 +1658,7 @@ After the initial project, the validation framework can be extended with:
 * Separate restoration proposals based on classification results
 * Broader LLM example validation patterns based on `llm_simple_qa`
 * Dependency license scanning if maintainers later decide it is needed
+* Automatic review bot for workflow approval gating, if maintainers want to reduce repeated manual approval for low-risk pull requests
 
 ---
 
