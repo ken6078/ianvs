@@ -114,7 +114,7 @@ Lightweight static checks will run across relevant examples on every pull reques
 
 A broader validation suite will run on a scheduled basis to detect time-based failures such as dependency drift, dataset unavailability, model download failure, or CI environment changes.
 
-A possible future extension is an automatic review bot for pull requests. If maintainers later decide the extra automation is worthwhile, the bot can inspect the diff against the `main` branch and auto-approve workflow execution only when CI-sensitive code such as `.github/` workflows or `tools/` automation is unchanged. Pull requests that touch CI-sensitive paths would still remain pending for maintainer review and approval.
+A possible future extension is an automatic review bot for pull requests. If maintainers later decide the extra automation is worthwhile, the bot can inspect the diff against the `main` branch and auto-approve workflow execution only when CI-sensitive code such as `.github/` workflows or `resources/tools/` automation is unchanged. Pull requests that touch CI-sensitive paths would still remain pending for maintainer review and approval.
 
 This proposal focuses on classification, validation, reporting, and one concrete restoration target: `examples/llm_simple_qa`. Fixing every broken example, replacing datasets for all examples, or rewriting all outdated documentation is out of scope and should be handled by separate restoration proposals or follow-up issues.
 
@@ -247,6 +247,60 @@ The CI pipeline mainly interacts with:
 
 The first version should avoid core Ianvs changes. Core changes should only be considered when multiple examples fail due to the same framework-level behavior, and such changes should be discussed separately.
 
+### Use Cases
+
+The proposal covers five primary validation use cases.
+
+#### UC-01: Local Validation Before Pull Request Submission
+
+A contributor wants to validate changes locally before opening or updating a pull request.
+
+In this use case, the contributor runs the local validation workflow with `nektos/act` or an equivalent local entry point. The workflow detects changed files, syncs with the upstream baseline, prepares a temporary validation branch, runs the appropriate validation tier, generates a local report, and cleans up temporary branch state after execution.
+
+The goal is to give contributors fast feedback before CI review, reduce avoidable pull request failures, and make CI results easier to reproduce locally.
+
+![UC-01 Local Validation Use Case](images/use-case/Use%20Case%20Diagram-Local%20Validation.drawio.png)
+
+#### UC-02: Document-Only Pull Request Validation
+
+A contributor submits a pull request that changes documentation only, such as example README files, usage guides, or related proposal documents.
+
+In this use case, the CI workflow runs static documentation validation instead of example execution-oriented validation. The workflow generates a documentation validation report, and maintainers review the result to decide whether the pull request can be merged or whether documentation fixes are still needed. If validation fails, the failure should be classified as a documentation issue rather than as an example runtime regression.
+
+The goal is to avoid unnecessary runtime validation for document-only changes while still preserving documentation quality and consistency.
+
+![UC-02 Document-Only PR Validation Use Case](images/use-case/Use%20Case%20Diagram-Document%20Change%20PR%20Validation.drawio.png)
+
+#### UC-03: Single Example Change Pull Request Validation
+
+A contributor submits a pull request that changes one example without modifying the shared Ianvs core or CI-sensitive framework code.
+
+In this use case, the workflow detects the changed example, runs affected-example validation, applies the appropriate validation tier, and generates a pull request health report. If validation fails, the workflow should classify the failure so maintainers can distinguish a newly introduced regression from a pre-existing or unrelated problem. Maintainers then review the validation result and decide whether to merge the pull request or request fixes.
+
+The goal is to keep pull request validation targeted, efficient, and actionable for ordinary example-level contributions.
+
+![UC-03 Single Example Change PR Validation Use Case](images/use-case/Use%20Case%20Diagram-Example%20Change%20PR%20Validation.drawio.png)
+
+#### UC-04: Core Code Change Pull Request Validation
+
+A contributor submits a pull request that changes shared Ianvs core code, common execution logic, or other paths that may affect multiple examples at once.
+
+In this use case, the CI workflow runs a broader regression validation scope than example-only changes. It generates a pull request health report for maintainer review, and any validation failure should be classified so the project can distinguish a true cross-example regression from an unrelated environmental issue. Maintainers use the result to decide whether the pull request is safe to merge or requires additional fixes.
+
+The goal is to protect validated examples from framework-level regressions when shared code changes have a wider blast radius.
+
+![UC-04 Core Code Change PR Validation Use Case](images/use-case/Use%20Case%20Diagram-Core%20Code%20Change%20PR%20Validation.drawio.png)
+
+#### UC-05: Scheduled Validation and Time-Based Failure Triage
+
+A maintainer wants the project to periodically re-validate examples even when no pull request is open, so the team can detect dependency drift, dataset availability problems, model download failures, and other time-based breakages.
+
+In this use case, a scheduled CI workflow runs the broader validation suite, detects time-based failures, classifies likely drift causes, and generates a health report for maintainer review. When a scheduled run identifies a failure, maintainers triage the result and choose an appropriate follow-up action, such as marking the example as a known failure, creating a follow-up issue, or quarantining a broken example until it is repaired. This workflow should distinguish scheduled drift detection from pull request regression detection so contributors are not blamed for failures introduced by the external environment over time.
+
+The goal is to give maintainers continuous visibility into example health, surface long-term ecosystem drift early, and provide a structured response path for scheduled validation failures.
+
+![UC-05 Scheduled Validation Use Case](images/use-case/Use%20Case%20Diagram-Scheduled%20Validation.drawio.png)
+
 ### Automatic Workflow Approval Bot
 
 As a future extension, the project can add a lightweight GitHub-integrated review bot that reduces the need for maintainers to manually approve workflow execution on pull requests from new contributors.
@@ -255,7 +309,7 @@ The bot should:
 
 * Trigger when a pull request is opened, synchronized, or reopened.
 * Compare the pull request diff against the current `main` branch.
-* Detect whether the pull request changes CI-sensitive paths, especially `.github/` and `tools/`.
+* Detect whether the pull request changes CI-sensitive paths, especially `.github/` and `resources/tools/`.
 * Automatically approve workflow execution when CI-sensitive paths are not changed.
 * Leave the pull request for maintainer review when CI-sensitive paths are changed.
 * Re-run the same decision on every pull request update so approval reflects the latest diff.
@@ -279,8 +333,8 @@ sequenceDiagram
 
 In this design, workflow approval is based on path-level risk classification:
 
-* Safe for automatic approval: pull requests that do not modify `.github/` or `tools/`
-* Requires maintainer review: pull requests that modify `.github/`, `tools/`, or other paths later designated as CI-sensitive
+* Safe for automatic approval: pull requests that do not modify `.github/` or `resources/tools/`
+* Requires maintainer review: pull requests that modify `.github/`, `resources/tools/`, or other paths later designated as CI-sensitive
 
 This keeps the approval rule simple, auditable, and aligned with the goal of protecting CI execution logic while removing repetitive maintainer work for ordinary example or documentation changes.
 
@@ -300,17 +354,18 @@ Ianvs Repository
 │   ├── example B/
 │   └── ...
 │
-├── tools/
-│   └── example_validation/
-|       ├── data/
-|       |   └── example_inventory.yaml
-│       ├── validate_examples.py
-│       ├── inventory.py
-│       ├── static_validator.py
-│       ├── dependency_validator.py
-│       ├── dataset_validator.py
-│       ├── smoke_test_runner.py
-│       └── report_generator.py
+├── resources/
+│   └── tools/
+│       └── example_validation/
+|           ├── data/
+|           |   └── example_inventory.yaml
+│           ├── validate_examples.py
+│           ├── inventory.py
+│           ├── static_validator.py
+│           ├── dependency_validator.py
+│           ├── dataset_validator.py
+│           ├── smoke_test_runner.py
+│           └── report_generator.py
 │
 ├── docs/
 │   └── example_validation/
@@ -330,14 +385,14 @@ The responsibilities of the proposed files are:
 |---|---|
 | `examples/` | Stores Ianvs example projects, including their runnable configurations, documentation, dependency references, dataset references, and algorithm-related files. These directories are the validation targets of the framework. |
 | `examples/<example_name>/scripts/prepare_dataset.py` | Provides the standard dataset preparation entry point for examples that support automated dataset setup. It should download, generate, or normalize the required dataset into the documented directory structure from a clean environment. |
-| `tools/example_validation/data/example_inventory.yaml` | Stores the example inventory and classification metadata, including each example's path, validation level, dataset requirements, dependency requirements, model requirements, hardware requirements, current status, expected dataset structure, and whether the dataset is external when automated preparation is unavailable. |
-| `tools/example_validation/validate_examples.py` | Serves as the main entry point for local and CI validation. It should parse CLI arguments, load the inventory, select validation stages, invoke the validator modules, and coordinate report generation. |
-| `tools/example_validation/inventory.py` | Loads and manages the example inventory. It should provide structured metadata access, helper logic for selecting changed or affected examples, and shared inventory operations used by the validation pipeline. |
-| `tools/example_validation/static_validator.py` | Performs lightweight static checks without executing examples. It should detect problems such as missing files, invalid YAML, broken relative paths, hardcoded local paths, outdated repository layout references, README and configuration mismatches, local-only model paths, and CUDA-only assumptions. |
-| `tools/example_validation/dependency_validator.py` | Validates whether example dependencies are properly declared and installable. It should check dependency file presence, package installation behavior, Python version compatibility, and dependency-related failures that block clean-environment execution. |
-| `tools/example_validation/dataset_validator.py` | Validates dataset-related requirements and lightweight data structure correctness. It should check dataset path consistency, `prepare_dataset.py` availability when automation is supported, declared dataset structure in the inventory, `external` classification when automation is unavailable, and format validity for files such as JSONL. |
-| `tools/example_validation/smoke_test_runner.py` | Runs lightweight execution tests for selected examples to confirm that they can start and complete a minimal validation run in CI without requiring full benchmark workloads where possible. |
-| `tools/example_validation/report_generator.py` | Converts validation results into human-readable CI summaries and example health reports, including failure classifications, reproduction commands, and suggested next actions for contributors and maintainers. |
+| `resources/tools/example_validation/data/example_inventory.yaml` | Stores the example inventory and classification metadata, including each example's path, validation level, dataset requirements, dependency requirements, model requirements, hardware requirements, current status, expected dataset structure, and whether the dataset is external when automated preparation is unavailable. |
+| `resources/tools/example_validation/validate_examples.py` | Serves as the main entry point for local and CI validation. It should parse CLI arguments, load the inventory, select validation stages, invoke the validator modules, and coordinate report generation. |
+| `resources/tools/example_validation/inventory.py` | Loads and manages the example inventory. It should provide structured metadata access, helper logic for selecting changed or affected examples, and shared inventory operations used by the validation pipeline. |
+| `resources/tools/example_validation/static_validator.py` | Performs lightweight static checks without executing examples. It should detect problems such as missing files, invalid YAML, broken relative paths, hardcoded local paths, outdated repository layout references, README and configuration mismatches, local-only model paths, and CUDA-only assumptions. |
+| `resources/tools/example_validation/dependency_validator.py` | Validates whether example dependencies are properly declared and installable. It should check dependency file presence, package installation behavior, Python version compatibility, and dependency-related failures that block clean-environment execution. |
+| `resources/tools/example_validation/dataset_validator.py` | Validates dataset-related requirements and lightweight data structure correctness. It should check dataset path consistency, `prepare_dataset.py` availability when automation is supported, declared dataset structure in the inventory, `external` classification when automation is unavailable, and format validity for files such as JSONL. |
+| `resources/tools/example_validation/smoke_test_runner.py` | Runs lightweight execution tests for selected examples to confirm that they can start and complete a minimal validation run in CI without requiring full benchmark workloads where possible. |
+| `resources/tools/example_validation/report_generator.py` | Converts validation results into human-readable CI summaries and example health reports, including failure classifications, reproduction commands, and suggested next actions for contributors and maintainers. |
 | `docs/example_validation/validation_rules.md` | Documents the validation rules implemented by the framework, including what each validator checks, why the rule exists, and how maintainers should interpret its result. |
 | `docs/example_validation/classification_policy.md` | Defines the example status model and failure classification policy, including which failure types block pull requests and which should be treated as known, pre-existing, or time-based failures. |
 | `docs/example_validation/example_status.md` | Serves as the maintainer-facing summary of current example health. It should present the latest classified status for examples, link or point to the underlying CI evidence when needed, and provide a stable place to track whether an example is validated, degraded, quarantined, external-resource-dependent, or awaiting follow-up repair work. |
@@ -696,7 +751,7 @@ Suggested Next Action:
 - Create a follow-up restoration issue if maintainers decide the example should be repaired.
 
 Reproduction:
-python tools/example_validation/validate_examples.py --example examples/llm_simple_qa --smoke
+python resources/tools/example_validation/validate_examples.py --example examples/llm_simple_qa --smoke
 ```
 
 ---
@@ -1151,11 +1206,11 @@ flowchart TD
 Local validation commands:
 
 ```bash
-python tools/example_validation/validate_examples.py --static
-python tools/example_validation/validate_examples.py --example examples/llm_simple_qa
-python tools/example_validation/validate_examples.py --smoke examples/llm_simple_qa
-python tools/example_validation/validate_examples.py --example examples/llm_simple_qa --all
-python tools/example_validation/validate_examples.py --example examples/llm_simple_qa --jsonl
+python resources/tools/example_validation/validate_examples.py --static
+python resources/tools/example_validation/validate_examples.py --example examples/llm_simple_qa
+python resources/tools/example_validation/validate_examples.py --smoke examples/llm_simple_qa
+python resources/tools/example_validation/validate_examples.py --example examples/llm_simple_qa --all
+python resources/tools/example_validation/validate_examples.py --example examples/llm_simple_qa --jsonl
 ```
 
 For workflow-level verification, contributors should also be able to run the relevant GitHub Actions jobs locally before pushing changes. The proposal should document using `nektos/act` to execute selected workflows or jobs from `.github/workflows/`, so contributors can check whether the same workflow logic used in CI still passes in a local environment.
@@ -1503,11 +1558,11 @@ Outcome:
 
 Focus:
 
-* Main implementation of the CI framework and restoration of `examples/llm_simple_qa`.
+* Main implementation of the CI framework, focusing first on online CI and restoration of `examples/llm_simple_qa`.
 
 Outcome:
 
-* A working CI prototype with validation, classification reporting, local contributor guidance, and an initial portable `llm_simple_qa` restoration result.
+* A working online CI prototype, classification reporting, and an initial portable `llm_simple_qa` restoration result.
 
 ---
 
@@ -1515,11 +1570,11 @@ Outcome:
 
 Focus:
 
-* Wrap-up, maintenance guidance, and future work after the main implementation phase.
+* Local validation, wrap-up, maintenance guidance, and future work after the main implementation phase.
 
 Outcome:
 
-* Final report, example health report, maintenance handover notes, and a future work plan covering broader example onboarding, stronger scheduled validation, and optional workflow-approval automation.
+* Local validation support, final report, example health report, maintenance handover notes, and a future work plan covering broader example onboarding, stronger scheduled validation, and optional workflow-approval automation.
 
 ---
 
