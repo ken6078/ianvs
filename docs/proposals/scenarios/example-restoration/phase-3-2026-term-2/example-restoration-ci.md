@@ -385,6 +385,7 @@ Ianvs Repository
 │       └── example_validation/
 |           ├── data/
 |           |   └── example_inventory.yaml
+│           ├── validation_branch_wrapper.py
 │           ├── validate_examples.py
 │           ├── inventory.py
 │           ├── static_validator.py
@@ -413,6 +414,7 @@ The responsibilities of the proposed files are:
 | `examples/` | Stores Ianvs example projects, including their runnable configurations, documentation, dependency references, dataset references, and algorithm-related files. These directories are the validation targets of the framework. |
 | `examples/<example_name>/scripts/prepare_dataset.py` | Provides the standard dataset preparation entry point for examples that support automated dataset setup. It should download, generate, or normalize the required dataset into the documented directory structure from a clean environment. |
 | `resources/tools/example_validation/data/example_inventory.yaml` | Stores the example inventory and classification metadata, including each example's path, validation level, dataset requirements, dependency requirements, model requirements, hardware requirements, current status, expected dataset structure, and whether the dataset is external when automated preparation is unavailable. |
+| `resources/tools/example_validation/validation_branch_wrapper.py` | Wraps local validation with the branch preparation and cleanup steps shown in the local validation flowchart. It should run around `validate_examples.py`, checking whether the `upstream` remote exists, adding it when missing, fetching `upstream/main`, finding the merge-base against the contributor's local `HEAD`, detecting changed files, creating a temporary validation branch, rebasing that branch onto `upstream/main`, and deleting the temporary branch after validation completes. |
 | `resources/tools/example_validation/validate_examples.py` | Serves as the main entry point for local and CI validation. It should parse CLI arguments, load the inventory, select validation stages, invoke the validator modules, and coordinate report generation. |
 | `resources/tools/example_validation/inventory.py` | Loads and manages the example inventory. It should provide structured metadata access, helper logic for selecting changed or affected examples, and shared inventory operations used by the validation pipeline. |
 | `resources/tools/example_validation/static_validator.py` | Performs lightweight static checks without executing examples. It should detect problems such as missing files, invalid YAML, broken relative paths, hardcoded local paths, outdated repository layout references, README and configuration mismatches, local-only model paths, and CUDA-only assumptions. |
@@ -426,6 +428,10 @@ The responsibilities of the proposed files are:
 | `docs/example_validation/example_status.md` | Serves as the maintainer-facing summary of current example health. It should present the latest classified status for examples, link or point to the underlying CI evidence when needed, and provide a stable place to track whether an example is validated, degraded, quarantined, external-resource-dependent, or awaiting follow-up repair work. |
 | `docs/example_validation/local_validation.md` | Documents how contributors run validation locally, including example commands, expected usage patterns, local troubleshooting, and optional workflow-level local verification guidance. |
 | `.github/workflows/example_validation.yml` | Defines the GitHub Actions workflow that runs the validation tiers, collects results, and publishes CI summaries or report artifacts. |
+
+For local contributor validation, `validation_branch_wrapper.py` should act as a wrapper around `validate_examples.py`. Before validation starts, it should ensure the `upstream` remote is available, synchronize with `upstream/main`, compute the change set against the merge-base, and create the temporary rebased validation branch. After validation finishes, it should handle cleanup, including deleting the temporary validation branch.
+
+For pull request validation, `validate_examples.py` should invoke `regression_detector.py` after the selected validators complete so the framework can compare the PR result against the current `main` branch baseline before deciding whether a failure should block merge.
 
 ---
 
