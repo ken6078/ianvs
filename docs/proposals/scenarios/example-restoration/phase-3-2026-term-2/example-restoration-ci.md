@@ -321,6 +321,12 @@ The goal is to make example health classification explicit, keep maintainer deci
 
 ![UC-07 Example Status Management Use Case](images/use-case/Use%20Case%20Diagram-Example%20Status%20Management.drawio.png)
 
+### User Story Roadmap
+
+The following roadmap connects the main user roles, the primary validation entry points, and the downstream decision flow across the several use cases. It provides a high-level view of how contributors, maintainers, and developers or enterprise users move through the validation and example health workflow.
+
+![User Story Roadmap](images/User%20Story%20Roadmap.drawio.png)
+
 ### Automatic Workflow Approval Bot
 
 As a future extension, the project can add a lightweight GitHub-integrated review bot that reduces the need for maintainers to manually approve workflow execution on pull requests from new contributors.
