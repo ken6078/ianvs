@@ -249,13 +249,13 @@ The first version should avoid core Ianvs changes. Core changes should only be c
 
 ### Use Cases
 
-The proposal covers five primary validation use cases.
+The proposal covers seven primary validation use cases.
 
 #### UC-01: Local Validation Before Pull Request Submission
 
 A contributor wants to validate changes locally before opening or updating a pull request.
 
-In this use case, the contributor runs the local validation workflow with `nektos/act` or an equivalent local entry point. The workflow detects changed files, syncs with the upstream baseline, prepares a temporary validation branch, runs the appropriate validation tier, generates a local report, and cleans up temporary branch state after execution.
+In this use case, the contributor runs the local validation workflow with `nektos/act` or an equivalent local entry point. The workflow syncs with the upstream baseline, prepares a temporary validation branch, runs validation locally, and generates a local report. The validation flow should always include static validation and may extend to smoke testing when the changed example or validation tier requires runtime execution. If the local run fails, the contributor should fix the failure before opening or updating the pull request.
 
 The goal is to give contributors fast feedback before CI review, reduce avoidable pull request failures, and make CI results easier to reproduce locally.
 
@@ -291,7 +291,17 @@ The goal is to protect validated examples from framework-level regressions when 
 
 ![UC-04 Core Code Change PR Validation Use Case](images/use-case/Use%20Case%20Diagram-Core%20Code%20Change%20PR%20Validation.drawio.png)
 
-#### UC-05: Scheduled Validation and Time-Based Failure Triage
+#### UC-05: Pull Request Regression Handling
+
+A contributor submits a pull request and needs the validation system to distinguish a regression introduced by the pull request from a failure that already exists in the base branch.
+
+In this use case, pull request validation is triggered automatically after the contributor submits the pull request. The workflow compares the base result and the pull request result, then generates a regression report for the contributor to read. If the comparison shows that the pull request introduced a new regression, the workflow should block the pull request until the contributor fixes it. If the failure already exists in the base branch, the workflow should report the pre-existing failure without blocking the pull request for that specific issue.
+
+The goal is to make pull request feedback fair and actionable by blocking only PR-introduced regressions while still surfacing pre-existing failures to maintainers and contributors.
+
+![UC-05 Pull Request Regression Handling Use Case](images/use-case/Use%20Case%20Diagram-Pull%20Request%20Regression%20Handling.drawio.png)
+
+#### UC-06: Scheduled Validation and Time-Based Failure Triage
 
 A maintainer wants the project to periodically re-validate examples even when no pull request is open, so the team can detect dependency drift, dataset availability problems, model download failures, and other time-based breakages.
 
@@ -299,7 +309,17 @@ In this use case, a scheduled CI workflow runs the broader validation suite, det
 
 The goal is to give maintainers continuous visibility into example health, surface long-term ecosystem drift early, and provide a structured response path for scheduled validation failures.
 
-![UC-05 Scheduled Validation Use Case](images/use-case/Use%20Case%20Diagram-Scheduled%20Validation.drawio.png)
+![UC-06 Scheduled Validation Use Case](images/use-case/Use%20Case%20Diagram-Scheduled%20Validation.drawio.png)
+
+#### UC-07: Example Status Management and Classification Review
+
+A maintainer wants to review the current status of examples and update their classification based on validation evidence, environment requirements, and reported failures.
+
+In this use case, the maintainer reviews the example report, views the current example status, and decides whether a failure should block a pull request. Based on the validation result, the maintainer may update the example classification to reflect operational constraints such as GPU requirements, external dataset requirements, or model download requirements. When the reported status reveals a follow-up maintenance task, the maintainer may also create a follow-up issue to track restoration or cleanup work.
+
+The goal is to make example health classification explicit, keep maintainer decisions consistent, and ensure the project records whether a failure is blocking, expected, or caused by special runtime prerequisites.
+
+![UC-07 Example Status Management Use Case](images/use-case/Use%20Case%20Diagram-Example%20Status%20Management.drawio.png)
 
 ### Automatic Workflow Approval Bot
 
