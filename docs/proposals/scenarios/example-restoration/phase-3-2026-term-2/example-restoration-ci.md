@@ -251,15 +251,15 @@ The first version should avoid core Ianvs changes. Core changes should only be c
 
 The proposal covers seven primary validation use cases.
 
-#### UC-01: Local Validation Before Pull Request Submission
+#### UC-01: Pull Request Regression Handling
 
-A contributor wants to validate changes locally before opening or updating a pull request.
+A contributor submits a pull request and needs the validation system to distinguish a regression introduced by the pull request from a failure that already exists in the base branch.
 
-In this use case, the contributor runs the local validation workflow with `nektos/act` or an equivalent local entry point. The workflow syncs with the upstream baseline, prepares a temporary validation branch, runs validation locally, and generates a local report. The validation flow should always include static validation and may extend to smoke testing when the changed example or validation tier requires runtime execution. If the local run fails, the contributor should fix the failure before opening or updating the pull request.
+In this use case, pull request validation is triggered automatically after the contributor submits the pull request. The workflow compares the base result and the pull request result, then generates a regression report for the contributor to read. If the comparison shows that the pull request introduced a new regression, the workflow should block the pull request until the contributor fixes it. If the failure already exists in the base branch, the workflow should report the pre-existing failure without blocking the pull request for that specific issue.
 
-The goal is to give contributors fast feedback before CI review, reduce avoidable pull request failures, and make CI results easier to reproduce locally.
+The goal is to make pull request feedback fair and actionable by blocking only PR-introduced regressions while still surfacing pre-existing failures to maintainers and contributors.
 
-![UC-01 Local Validation Use Case](images/use-case/Use%20Case%20Diagram-Local%20Validation.drawio.png)
+![UC-01 Pull Request Regression Handling Use Case](images/use-case/Use%20Case%20Diagram-Pull%20Request%20Regression%20Handling.drawio.png)
 
 #### UC-02: Document-Only Pull Request Validation
 
@@ -291,15 +291,15 @@ The goal is to protect validated examples from framework-level regressions when 
 
 ![UC-04 Core Code Change PR Validation Use Case](images/use-case/Use%20Case%20Diagram-Core%20Code%20Change%20PR%20Validation.drawio.png)
 
-#### UC-05: Pull Request Regression Handling
+#### UC-05: Local Validation Before Pull Request Submission
 
-A contributor submits a pull request and needs the validation system to distinguish a regression introduced by the pull request from a failure that already exists in the base branch.
+A contributor wants to validate changes locally before opening or updating a pull request.
 
-In this use case, pull request validation is triggered automatically after the contributor submits the pull request. The workflow compares the base result and the pull request result, then generates a regression report for the contributor to read. If the comparison shows that the pull request introduced a new regression, the workflow should block the pull request until the contributor fixes it. If the failure already exists in the base branch, the workflow should report the pre-existing failure without blocking the pull request for that specific issue.
+In this use case, the contributor runs the local validation workflow with `nektos/act` or an equivalent local entry point. The workflow syncs with the upstream baseline, prepares a temporary validation branch, runs validation locally, and generates a local report. The validation flow should always include static validation and may extend to smoke testing when the changed example or validation tier requires runtime execution. If the local run fails, the contributor should fix the failure before opening or updating the pull request.
 
-The goal is to make pull request feedback fair and actionable by blocking only PR-introduced regressions while still surfacing pre-existing failures to maintainers and contributors.
+The goal is to give contributors fast feedback before CI review, reduce avoidable pull request failures, and make CI results easier to reproduce locally.
 
-![UC-05 Pull Request Regression Handling Use Case](images/use-case/Use%20Case%20Diagram-Pull%20Request%20Regression%20Handling.drawio.png)
+![UC-05 Local Validation Use Case](images/use-case/Use%20Case%20Diagram-Local%20Validation.drawio.png)
 
 #### UC-06: Scheduled Validation and Time-Based Failure Triage
 
