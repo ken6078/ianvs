@@ -220,6 +220,12 @@ Main needs:
 
 ## Design Details
 
+### User Story Roadmap
+
+The following roadmap connects the main user roles, the primary validation entry points, and the downstream decision flow across the several use cases. It provides a high-level view of how contributors, maintainers, and developers or enterprise users move through the validation and example health workflow.
+
+![User Story Roadmap](images/User%20Story%20Roadmap.drawio.png)
+
 ### Relationship Between CI and Ianvs
 
 The CI pipeline is a validation and classification layer around Ianvs examples.
@@ -320,12 +326,6 @@ In this use case, the maintainer reviews the example report, views the current e
 The goal is to make example health classification explicit, keep maintainer decisions consistent, and ensure the project records whether a failure is blocking, expected, or caused by special runtime prerequisites.
 
 ![UC-07 Example Status Management Use Case](images/use-case/Use%20Case%20Diagram-Example%20Status%20Management.drawio.png)
-
-### User Story Roadmap
-
-The following roadmap connects the main user roles, the primary validation entry points, and the downstream decision flow across the several use cases. It provides a high-level view of how contributors, maintainers, and developers or enterprise users move through the validation and example health workflow.
-
-![User Story Roadmap](images/User%20Story%20Roadmap.drawio.png)
 
 ### Automatic Workflow Approval Bot
 
