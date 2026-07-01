@@ -391,6 +391,7 @@ Ianvs Repository
 │           ├── dependency_validator.py
 │           ├── dataset_validator.py
 │           ├── smoke_test_runner.py
+│           ├── regression_detector.py
 │           └── report_generator.py
 │
 ├── docs/
@@ -418,6 +419,7 @@ The responsibilities of the proposed files are:
 | `resources/tools/example_validation/dependency_validator.py` | Validates whether example dependencies are properly declared and installable. It should check dependency file presence, package installation behavior, Python version compatibility, and dependency-related failures that block clean-environment execution. |
 | `resources/tools/example_validation/dataset_validator.py` | Validates dataset-related requirements and lightweight data structure correctness. It should check dataset path consistency, `prepare_dataset.py` availability when automation is supported, declared dataset structure in the inventory, `external` classification when automation is unavailable, and format validity for files such as JSONL. |
 | `resources/tools/example_validation/smoke_test_runner.py` | Runs lightweight execution tests for selected examples to confirm that they can start and complete a minimal validation run in CI without requiring full benchmark workloads where possible. |
+| `resources/tools/example_validation/regression_detector.py` | Compares validation failures from the pull request result against the baseline result from the `main` branch. It should identify which failures are newly introduced by the pull request, which failures already exist on `main`, and which differences should be classified as non-blocking baseline debt rather than PR regressions. |
 | `resources/tools/example_validation/report_generator.py` | Converts validation results into human-readable CI summaries and example health reports, including failure classifications, reproduction commands, and suggested next actions for contributors and maintainers. |
 | `docs/example_validation/validation_rules.md` | Documents the validation rules implemented by the framework, including what each validator checks, why the rule exists, and how maintainers should interpret its result. |
 | `docs/example_validation/classification_policy.md` | Defines the example status model and failure classification policy, including which failure types block pull requests and which should be treated as known, pre-existing, or time-based failures. |
