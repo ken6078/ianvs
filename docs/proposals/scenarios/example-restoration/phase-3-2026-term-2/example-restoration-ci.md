@@ -370,6 +370,12 @@ This keeps the approval rule simple, auditable, and aligned with the goal of pro
 
 The proposed framework adds a validation layer around existing Ianvs examples.
 
+### Software Architecture Overview
+
+The following architecture diagram shows the main system layers of the proposed framework. At a high level, GitHub workflow triggers invoke the validation modules, shared storage provides the inventory and validation state used across the system, and the existing Ianvs node-side managers remain the execution environment whose behavior is observed and classified by the validation pipeline. Within the workflow layer, the key proposal-specific responsibilities are static validation, affected-example validation, regression detection, local validation support, and report generation.
+
+![Software Architecture](images/Software%20Architecture.png)
+
 ```text
 Ianvs Repository
 ├── examples/
