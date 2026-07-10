@@ -412,7 +412,7 @@ The following architecture diagram shows the main system layers of the proposed 
 ```text
 Ianvs Repository
 ├── examples/
-│   ├── README.md (Show example status matrix)
+│   ├── README.md (Show validation time and status matrix)
 │   ├── llm_simple_qa/
 │   │   └── scripts/
 │   │       └── prepare_dataset.py
@@ -424,7 +424,8 @@ Ianvs Repository
 │   └── example_validation/
 │       ├── validation_rules.md
 │       ├── classification_policy.md
-│       └── local_validation.md
+│       ├── local_validation.md
+│       └── status_directions.md
 │
 └── .github/
     ├── tools/
@@ -451,8 +452,9 @@ The responsibilities of the proposed files are:
 | Path | Responsibility |
 |---|---|
 | `examples/` | Stores Ianvs example projects, including their runnable configurations, documentation, dependency references, dataset references, and algorithm-related files. These directories are the validation targets of the framework. |
-| `examples/README.md` | Serves as the maintainer-facing summary of current example health. It should present the latest classified status for examples, link or point to the underlying CI evidence when needed, and provide a stable place to track whether an example is validated, degraded, quarantined, external-resource-dependent, or awaiting follow-up repair work. |
+| `examples/README.md` | Serves as the maintainer-facing summary of current example health. It should keep the latest T2/T3 validation time and the example status matrix, link or point to the underlying CI evidence when needed, and provide a stable place to track whether an example is validated, degraded, quarantined, external-resource-dependent, or awaiting follow-up repair work. Detailed status explanations should live in `docs/example_validation/status_directions.md`, and `examples/README.md` should link to that file. |
 | `examples/<example_name>/scripts/prepare_dataset.py` | Provides the standard dataset preparation entry point for examples that support automated dataset setup. It should download, generate, or normalize the required dataset into the documented directory structure from a clean environment. |
+| `docs/example_validation/status_directions.md` | Documents the example status model, badge legend, broken-status subtypes, and interpretation notes. This keeps detailed status explanations out of `examples/README.md`, where only the latest validation time and status matrix should remain. A later documentation update should make `examples/README.md` link to this file. |
 | `.github/tools/example_validation/main.py` | Serves as the main entry point for local and CI validation. It should parse CLI arguments, load the inventory, select validation stages, invoke the validator modules, and coordinate report generation. |
 | `.github/tools/example_validation/validators/static_validator.py` | Performs lightweight static checks without executing examples. It should detect problems such as missing files, invalid YAML, broken relative paths, hardcoded local paths, outdated repository layout references, README and configuration mismatches, local-only model paths, and CUDA-only assumptions. |
 | `.github/tools/example_validation/validators/dependency_validator.py` | Validates whether example dependencies are properly declared and installable. It should check dependency file presence, package installation behavior, Python version compatibility, and dependency-related failures that block clean-environment execution. |
