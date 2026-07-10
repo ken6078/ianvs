@@ -989,9 +989,13 @@ When a Tier 2 validation run is merged into `main`, the Tier 3 schedule for the 
 
 ![Tier 3 Validation Reset After Tier 2](images/Tier3-Validation-Reset-After-Tier2.png)
 
-In this timeline, `Alpha` is the previous Tier 3 baseline, `Beta` is the point where a Tier 2 validation run is merged into `main`, `Gamma` is where the original Tier 3 run would have happened if the schedule had not changed, and `Delta` is the actual Tier 3 execution time after the reset. In other words, once `Beta` lands, the framework should postpone the previously expected Tier 3 run at `Gamma` and reschedule it to `Delta` based on the configured interval after `Beta`.
+The timeline shows the reset behavior through three main time points:
 
-This reset rule applies only when the Tier 2 pull request is merged before the originally scheduled Tier 3 point at `Gamma`. If Tier 2 runs at `Beta` but the corresponding pull request is merged only after `Gamma`, then the Tier 3 run at `Gamma` should still execute as originally scheduled, because the reset condition was not satisfied before that scheduled time.
+* **Previous Tier 3:** The last scheduled Tier 3 run has completed and becomes the current validation baseline for `main`.
+* **Tier 2 Merge:** One day after the previous Tier 3 run, a Tier 2 validation run is merged into `main`. Because this merge already validates the same target set, it replaces the previous Tier 3 run as the newest validated baseline.
+* **Rescheduled Next Tier 3:** The next Tier 3 timer restarts from the Tier 2 merge point. With a one-week Tier 3 cadence, the original next Tier 3 time is skipped and the actual next Tier 3 run is pushed back by one day.
+
+This reset rule applies only when the Tier 2 pull request is merged before the originally scheduled Tier 3 time. If Tier 2 completes but the corresponding pull request is merged only after that scheduled Tier 3 point, then Tier 3 should still execute as originally scheduled, because there was no newer merged baseline available before the scheduled run time.
 
 ---
 
