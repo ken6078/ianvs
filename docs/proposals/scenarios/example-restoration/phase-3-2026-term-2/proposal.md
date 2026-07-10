@@ -412,28 +412,13 @@ The following architecture diagram shows the main system layers of the proposed 
 ```text
 Ianvs Repository
 ├── examples/
-│   ├── README.md
+│   ├── README.md (Show example status matrix)
 │   ├── llm_simple_qa/
 │   │   └── scripts/
 │   │       └── prepare_dataset.py
 │   ├── example A/
 │   ├── example B/
 │   └── ...
-│
-├── resources/
-│   └── tools/
-│       └── example_validation/
-|           ├── data/
-|           |   └── example_inventory.yaml
-│           ├── validation_branch_wrapper.py
-│           ├── validate_examples.py
-│           ├── inventory.py
-│           ├── static_validator.py
-│           ├── dependency_validator.py
-│           ├── dataset_validator.py
-│           ├── smoke_test_runner.py
-│           ├── regression_detector.py
-│           └── report_generator.py
 │
 ├── docs/
 │   └── example_validation/
@@ -442,6 +427,21 @@ Ianvs Repository
 │       └── local_validation.md
 │
 └── .github/
+    ├── tools/
+    │   └── example_validation/
+    │       ├── main.py
+    │       ├── validators/
+    │       │   ├── static_validator.py
+    │       │   ├── dependency_validator.py
+    │       │   └── smoke_test_validator.py
+    │       ├── core/
+    │       │   ├── validation_branch_wrapper.py
+    │       │   ├── inventory.py
+    │       │   ├── regression_detector.py
+    │       │   └── report_generator.py
+    │       └── data/
+    │           └── example_inventory.yaml
+    │
     └── workflows/
         └── example_validation.yml
 ```
@@ -453,24 +453,23 @@ The responsibilities of the proposed files are:
 | `examples/` | Stores Ianvs example projects, including their runnable configurations, documentation, dependency references, dataset references, and algorithm-related files. These directories are the validation targets of the framework. |
 | `examples/README.md` | Serves as the maintainer-facing summary of current example health. It should present the latest classified status for examples, link or point to the underlying CI evidence when needed, and provide a stable place to track whether an example is validated, degraded, quarantined, external-resource-dependent, or awaiting follow-up repair work. |
 | `examples/<example_name>/scripts/prepare_dataset.py` | Provides the standard dataset preparation entry point for examples that support automated dataset setup. It should download, generate, or normalize the required dataset into the documented directory structure from a clean environment. |
-| `resources/tools/example_validation/data/example_inventory.yaml` | Stores the example inventory and classification metadata, including each example's path, validation level, dataset requirements, dependency requirements, model requirements, hardware requirements, current status, expected dataset structure, and whether the dataset is external when automated preparation is unavailable. |
-| `resources/tools/example_validation/validation_branch_wrapper.py` | Wraps local validation with the branch preparation and cleanup steps shown in the local validation flowchart. It should run around `validate_examples.py`, checking whether the `upstream` remote exists, adding it when missing, fetching `upstream/main`, finding the merge-base against the contributor's local `HEAD`, detecting changed files, creating a temporary validation branch, rebasing that branch onto `upstream/main`, and deleting the temporary branch after validation completes. |
-| `resources/tools/example_validation/validate_examples.py` | Serves as the main entry point for local and CI validation. It should parse CLI arguments, load the inventory, select validation stages, invoke the validator modules, and coordinate report generation. |
-| `resources/tools/example_validation/inventory.py` | Loads and manages the example inventory. It should provide structured metadata access, helper logic for selecting changed or affected examples, and shared inventory operations used by the validation pipeline. |
-| `resources/tools/example_validation/static_validator.py` | Performs lightweight static checks without executing examples. It should detect problems such as missing files, invalid YAML, broken relative paths, hardcoded local paths, outdated repository layout references, README and configuration mismatches, local-only model paths, and CUDA-only assumptions. |
-| `resources/tools/example_validation/dependency_validator.py` | Validates whether example dependencies are properly declared and installable. It should check dependency file presence, package installation behavior, Python version compatibility, and dependency-related failures that block clean-environment execution. |
-| `resources/tools/example_validation/dataset_validator.py` | Validates dataset-related requirements and lightweight data structure correctness. It should check dataset path consistency, `prepare_dataset.py` availability when automation is supported, declared dataset structure in the inventory, `external` classification when automation is unavailable, and format validity for files such as JSONL. |
-| `resources/tools/example_validation/smoke_test_runner.py` | Runs lightweight execution tests for selected examples to confirm that they can start and complete a minimal validation run in CI without requiring full benchmark workloads where possible. |
-| `resources/tools/example_validation/regression_detector.py` | Compares validation failures from the pull request result against the baseline result from the `main` branch. It should identify which failures are newly introduced by the pull request, which failures already exist on `main`, and which differences should be classified as non-blocking baseline debt rather than PR regressions. |
-| `resources/tools/example_validation/report_generator.py` | Converts validation results into human-readable CI summaries and example health reports, including failure classifications, reproduction commands, and suggested next actions for contributors and maintainers. |
+| `.github/tools/example_validation/main.py` | Serves as the main entry point for local and CI validation. It should parse CLI arguments, load the inventory, select validation stages, invoke the validator modules, and coordinate report generation. |
+| `.github/tools/example_validation/validators/static_validator.py` | Performs lightweight static checks without executing examples. It should detect problems such as missing files, invalid YAML, broken relative paths, hardcoded local paths, outdated repository layout references, README and configuration mismatches, local-only model paths, and CUDA-only assumptions. |
+| `.github/tools/example_validation/validators/dependency_validator.py` | Validates whether example dependencies are properly declared and installable. It should check dependency file presence, package installation behavior, Python version compatibility, and dependency-related failures that block clean-environment execution. |
+| `.github/tools/example_validation/validators/smoke_test_validator.py` | Runs lightweight execution validation for selected examples to confirm that they can start and complete a minimal validation run in CI without requiring full benchmark workloads where possible. |
+| `.github/tools/example_validation/core/validation_branch_wrapper.py` | Wraps local validation with the branch preparation and cleanup steps shown in the local validation flowchart. It should run around `main.py`, checking whether the `upstream` remote exists, adding it when missing, fetching `upstream/main`, finding the merge-base against the contributor's local `HEAD`, detecting changed files, creating a temporary validation branch, rebasing that branch onto `upstream/main`, and deleting the temporary branch after validation completes. |
+| `.github/tools/example_validation/core/inventory.py` | Loads and manages the example inventory. It should provide structured metadata access, helper logic for selecting changed or affected examples, and shared inventory operations used by the validation pipeline. |
+| `.github/tools/example_validation/core/regression_detector.py` | Compares validation failures from the pull request result against the baseline result from the `main` branch. It should identify which failures are newly introduced by the pull request, which failures already exist on `main`, and which differences should be classified as non-blocking baseline debt rather than PR regressions. |
+| `.github/tools/example_validation/core/report_generator.py` | Converts validation results into human-readable CI summaries and example health reports, including failure classifications, reproduction commands, and suggested next actions for contributors and maintainers. |
+| `.github/tools/example_validation/data/example_inventory.yaml` | Stores the example inventory and classification metadata, including each example's path, validation level, dataset requirements, dependency requirements, model requirements, hardware requirements, current status, expected dataset structure, and whether the dataset is external when automated preparation is unavailable. |
 | `docs/example_validation/validation_rules.md` | Documents the validation rules implemented by the framework, including what each validator checks, why the rule exists, and how maintainers should interpret its result. |
 | `docs/example_validation/classification_policy.md` | Defines the example status model and failure classification policy, including which failure types block pull requests and which should be treated as known, pre-existing, or time-based failures. |
 | `docs/example_validation/local_validation.md` | Documents how contributors run validation locally, including example commands, expected usage patterns, local troubleshooting, and optional workflow-level local verification guidance. |
 | `.github/workflows/example_validation.yml` | Defines the GitHub Actions workflow that runs the validation tiers, collects results, and publishes CI summaries or report artifacts. |
 
-For local contributor validation, `validation_branch_wrapper.py` should act as a wrapper around `validate_examples.py`. Before validation starts, it should ensure the `upstream` remote is available, synchronize with `upstream/main`, compute the change set against the merge-base, and create the temporary rebased validation branch. After validation finishes, it should handle cleanup, including deleting the temporary validation branch.
+For local contributor validation, `validation_branch_wrapper.py` should act as a wrapper around `main.py`. Before validation starts, it should ensure the `upstream` remote is available, synchronize with `upstream/main`, compute the change set against the merge-base, and create the temporary rebased validation branch. After validation finishes, it should handle cleanup, including deleting the temporary validation branch.
 
-For pull request validation, `validate_examples.py` should invoke `regression_detector.py` after the selected validators complete so the framework can compare the PR result against the current `main` branch baseline before deciding whether a failure should block merge.
+For pull request validation, `main.py` should invoke `regression_detector.py` after the selected validators complete so the framework can compare the PR result against the current `main` branch baseline before deciding whether a failure should block merge.
 
 ---
 
@@ -829,7 +828,7 @@ Suggested Next Action:
 - Create a follow-up restoration issue if maintainers decide the example should be repaired.
 
 Reproduction:
-python resources/tools/example_validation/validate_examples.py --example examples/llm_simple_qa --smoke
+python .github/tools/example_validation/main.py --example examples/llm_simple_qa --smoke
 ```
 
 ---
@@ -1424,11 +1423,11 @@ In short, `Alpha` is still needed to identify the contributor-owned diff, `Beta`
 Local validation commands:
 
 ```bash
-python resources/tools/example_validation/validate_examples.py --static
-python resources/tools/example_validation/validate_examples.py --example examples/llm_simple_qa
-python resources/tools/example_validation/validate_examples.py --smoke examples/llm_simple_qa
-python resources/tools/example_validation/validate_examples.py --example examples/llm_simple_qa --all
-python resources/tools/example_validation/validate_examples.py --example examples/llm_simple_qa --jsonl
+python .github/tools/example_validation/main.py --static
+python .github/tools/example_validation/main.py --example examples/llm_simple_qa
+python .github/tools/example_validation/main.py --smoke examples/llm_simple_qa
+python .github/tools/example_validation/main.py --example examples/llm_simple_qa --all
+python .github/tools/example_validation/main.py --example examples/llm_simple_qa --jsonl
 ```
 
 For workflow-level verification, contributors should also be able to run the relevant GitHub Actions jobs locally before pushing changes. The proposal should document using `nektos/act` to execute selected workflows or jobs from `.github/workflows/`, so contributors can check whether the same workflow logic used in CI still passes in a local environment.
