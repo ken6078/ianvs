@@ -114,7 +114,7 @@ Lightweight static checks will run across relevant examples on every pull reques
 
 A broader validation suite will run on a scheduled basis to detect time-based failures such as dependency drift, dataset unavailability, model download failure, or CI environment changes.
 
-A possible future extension is an automatic review bot for pull requests. If maintainers later decide the extra automation is worthwhile, the bot can inspect the diff against the `main` branch and auto-approve workflow execution only when CI-sensitive code such as `.github/` workflows or `resources/tools/` automation is unchanged. Pull requests that touch CI-sensitive paths would still remain pending for maintainer review and approval.
+A possible future extension is an automatic review bot for pull requests. If maintainers later decide the extra automation is worthwhile, the bot can inspect the diff against the `main` branch and auto-approve workflow execution only when CI-sensitive code such as workflow YAML files under `.github/workflows/` or validator automation under `.github/workflows/example_validator/` is unchanged. Pull requests that touch CI-sensitive paths would still remain pending for maintainer review and approval.
 
 This proposal focuses on classification, validation, reporting, and one concrete restoration target: `examples/llm_simple_qa`. Fixing every broken example, replacing datasets for all examples, or rewriting all outdated documentation is out of scope and should be handled by separate restoration proposals or follow-up issues.
 
@@ -368,7 +368,7 @@ The bot should:
 
 * Trigger when a pull request is opened, synchronized, or reopened.
 * Compare the pull request diff against the current `main` branch.
-* Detect whether the pull request changes CI-sensitive paths, especially `.github/` and `resources/tools/`.
+* Detect whether the pull request changes CI-sensitive paths, especially workflow YAML files under `.github/workflows/` and validator automation under `.github/workflows/example_validator/`.
 * Automatically approve workflow execution when CI-sensitive paths are not changed.
 * Leave the pull request for maintainer review when CI-sensitive paths are changed.
 * Re-run the same decision on every pull request update so approval reflects the latest diff.
@@ -392,8 +392,8 @@ sequenceDiagram
 
 In this design, workflow approval is based on path-level risk classification:
 
-* Safe for automatic approval: pull requests that do not modify `.github/` or `resources/tools/`
-* Requires maintainer review: pull requests that modify `.github/`, `resources/tools/`, or other paths later designated as CI-sensitive
+* Safe for automatic approval: pull requests that do not modify workflow YAML files under `.github/workflows/` or validator automation under `.github/workflows/example_validator/`
+* Requires maintainer review: pull requests that modify workflow YAML files under `.github/workflows/`, validator automation under `.github/workflows/example_validator/`, or other paths later designated as CI-sensitive
 
 This keeps the approval rule simple, auditable, and aligned with the goal of protecting CI execution logic while removing repetitive maintainer work for ordinary example or documentation changes.
 
@@ -405,11 +405,11 @@ The proposed framework adds a validation layer around existing Ianvs examples.
 
 ### Software Architecture Overview
 
-The following architecture diagram shows the main system layers of the proposed framework. At a high level, CI/CD event triggers invoke the validation modules under `.github/tools/example_validator/`, shared storage provides the inventory and validation state used across the system, and the existing Ianvs node-side managers remain the execution environment whose behavior is observed and classified by the validation pipeline. Within the CI/CD layer, the key proposal-specific responsibilities are static validation, affected-example validation, regression detection, local validation support, and report generation.
+The following architecture diagram shows the main system layers of the proposed framework. At a high level, CI/CD event triggers invoke the validation modules under `.github/workflows/example_validator/`, shared storage provides the inventory and validation state used across the system, and the existing Ianvs node-side managers remain the execution environment whose behavior is observed and classified by the validation pipeline. Within the CI/CD layer, the key proposal-specific responsibilities are static validation, affected-example validation, regression detection, local validation support, and report generation.
 
 ![Software Architecture](images/Software-Architecture.png)
 
-Although the software architecture presents GitHub Actions as the CI/CD execution layer, the repository does not introduce a separate `.github/CICD/` directory because GitHub Actions only discovers workflow definitions under `.github/workflows/` ([document](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/approve-runs-from-forks)). Each validation concern therefore remains represented by a single workflow file, such as CodeQL, FOSSA, Pylint, or example validation. The General Validators are third-party integrations, so they require only their corresponding YAML workflow files and do not introduce additional implementation files in the repository. In contrast, the Example Validator contains project-specific reusable logic, which is implemented under `.github/tools/example_validator/` and invoked by the example-validation workflow.
+Although the software architecture presents GitHub Actions as the CI/CD execution layer, the repository does not introduce a separate `.github/CICD/` directory because GitHub Actions only discovers workflow definitions under `.github/workflows/` ([document](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/approve-runs-from-forks)). Each validation concern therefore remains represented by a workflow YAML file under `.github/workflows/`, including renamed CI/CD workflow definitions such as `main_CICD.yaml`, `main_doc_CICD.yaml`, `fossa_CICD.yaml`, `codeql_analysis_CICD.yaml`, and `code_CICD.yaml`. The General Validators are third-party integrations, so they require only their corresponding YAML workflow files and do not introduce additional implementation files in the repository. In contrast, the Example Validator contains project-specific reusable logic, which is colocated under `.github/workflows/example_validator/` and invoked by the example-validation workflow.
 
 ```text
 Ianvs Repository
@@ -430,22 +430,24 @@ Ianvs Repository
 │       └── status_directions.md
 │
 └── .github/
-    ├── tools/
-    │   └── example_validator/
-    │       ├── validation_runner.py
-    │       ├── static_validator.py
-    │       ├── dependency_validator.py
-    │       ├── smoke_test_validator.py
-    │       ├── services/
-    │       │   ├── validation_branch_manager.py
-    │       │   ├── inventory_loader.py
-    │       │   ├── regression_detector.py
-    │       │   └── report_generator.py
-    │       └── data/
-    │           └── example_inventory.yaml
-    │
     └── workflows/
-        └── example_validator.yml
+        ├── main_CICD.yaml              (Rename)
+        ├── main_doc_CICD.yaml          (Rename)
+        ├── fossa_CICD.yaml             (Rename)
+        ├── codeql_analysis_CICD.yaml   (Rename)
+        ├── code_CICD.yaml
+        └── example_validator/
+            ├── validation_runner.py
+            ├── static_validator.py
+            ├── dependency_validator.py
+            ├── smoke_test_validator.py
+            ├── services/
+            │   ├── validation_branch_manager.py
+            │   ├── inventory_loader.py
+            │   ├── regression_detector.py
+            │   └── report_generator.py
+            └── data/
+                └── example_inventory.yaml
 ```
 
 The responsibilities of the proposed files are:
@@ -456,19 +458,19 @@ The responsibilities of the proposed files are:
 | `examples/README.md` | Serves as the maintainer-facing summary of current example health. It should keep the latest T2/T3 validation time and the example status matrix, link or point to the underlying CI evidence when needed, and provide a stable place to track whether an example is validated, degraded, quarantined, external-resource-dependent, or awaiting follow-up repair work. Detailed status explanations should live in `docs/example_validator/status_directions.md`, and `examples/README.md` should link to that file. |
 | `examples/<example_name>/scripts/prepare_dataset.py` | Provides the standard dataset preparation entry point for examples that support automated dataset setup. It should download, generate, or normalize the required dataset into the documented directory structure from a clean environment. |
 | `docs/example_validator/status_directions.md` | Documents the example status model, badge legend, broken-status subtypes, and interpretation notes. This keeps detailed status explanations out of `examples/README.md`, where only the latest validation time and status matrix should remain. A later documentation update should make `examples/README.md` link to this file. |
-| `.github/tools/example_validator/validation_runner.py` | Serves as the main entry point for local and CI validation. It should parse CLI arguments, load the inventory, select validation stages, invoke the validation modules that live directly under `example_validator/`, and coordinate report generation. |
-| `.github/tools/example_validator/static_validator.py` | Performs lightweight static checks without executing examples. It should detect problems such as missing files, invalid YAML, broken relative paths, hardcoded local paths, outdated repository layout references, README and configuration mismatches, local-only model paths, and CUDA-only assumptions. |
-| `.github/tools/example_validator/dependency_validator.py` | Validates whether example dependencies are properly declared and installable. It should check dependency file presence, package installation behavior, Python version compatibility, and dependency-related failures that block clean-environment execution. |
-| `.github/tools/example_validator/smoke_test_validator.py` | Runs lightweight execution validation for selected examples to confirm that they can start and complete a minimal validation run in CI without requiring full benchmark workloads where possible. |
-| `.github/tools/example_validator/services/validation_branch_manager.py` | Wraps local validation with the branch preparation and cleanup steps shown in the local validation flowchart. It should run around `validation_runner.py`, checking whether the `upstream` remote exists, adding it when missing, fetching `upstream/main`, finding the merge-base against the contributor's local `HEAD`, detecting changed files, creating a temporary validation branch, rebasing that branch onto `upstream/main`, and deleting the temporary branch after validation completes. |
-| `.github/tools/example_validator/services/inventory_loader.py` | Loads and manages the example inventory. It should provide structured metadata access, helper logic for selecting changed or affected examples, and shared inventory operations used by the validation pipeline. |
-| `.github/tools/example_validator/services/regression_detector.py` | Compares validation failures from the pull request result against the baseline result from the `main` branch. It should identify which failures are newly introduced by the pull request, which failures already exist on `main`, and which differences should be classified as non-blocking baseline debt rather than PR regressions. |
-| `.github/tools/example_validator/services/report_generator.py` | Converts validation results into human-readable CI summaries and example health reports, including failure classifications, reproduction commands, and suggested next actions for contributors and maintainers. |
-| `.github/tools/example_validator/data/example_inventory.yaml` | Stores the example inventory and classification metadata, including each example's path, validation level, dataset requirements, dependency requirements, model requirements, hardware requirements, current status, expected dataset structure, and whether the dataset is external when automated preparation is unavailable. |
+| `.github/workflows/example_validator/validation_runner.py` | Serves as the main entry point for local and CI validation. It should parse CLI arguments, load the inventory, select validation stages, invoke the validation modules that live directly under `example_validator/`, and coordinate report generation. |
+| `.github/workflows/example_validator/static_validator.py` | Performs lightweight static checks without executing examples. It should detect problems such as missing files, invalid YAML, broken relative paths, hardcoded local paths, outdated repository layout references, README and configuration mismatches, local-only model paths, and CUDA-only assumptions. |
+| `.github/workflows/example_validator/dependency_validator.py` | Validates whether example dependencies are properly declared and installable. It should check dependency file presence, package installation behavior, Python version compatibility, and dependency-related failures that block clean-environment execution. |
+| `.github/workflows/example_validator/smoke_test_validator.py` | Runs lightweight execution validation for selected examples to confirm that they can start and complete a minimal validation run in CI without requiring full benchmark workloads where possible. |
+| `.github/workflows/example_validator/services/validation_branch_manager.py` | Wraps local validation with the branch preparation and cleanup steps shown in the local validation flowchart. It should run around `validation_runner.py`, checking whether the `upstream` remote exists, adding it when missing, fetching `upstream/main`, finding the merge-base against the contributor's local `HEAD`, detecting changed files, creating a temporary validation branch, rebasing that branch onto `upstream/main`, and deleting the temporary branch after validation completes. |
+| `.github/workflows/example_validator/services/inventory_loader.py` | Loads and manages the example inventory. It should provide structured metadata access, helper logic for selecting changed or affected examples, and shared inventory operations used by the validation pipeline. |
+| `.github/workflows/example_validator/services/regression_detector.py` | Compares validation failures from the pull request result against the baseline result from the `main` branch. It should identify which failures are newly introduced by the pull request, which failures already exist on `main`, and which differences should be classified as non-blocking baseline debt rather than PR regressions. |
+| `.github/workflows/example_validator/services/report_generator.py` | Converts validation results into human-readable CI summaries and example health reports, including failure classifications, reproduction commands, and suggested next actions for contributors and maintainers. |
+| `.github/workflows/example_validator/data/example_inventory.yaml` | Stores the example inventory and classification metadata, including each example's path, validation level, dataset requirements, dependency requirements, model requirements, hardware requirements, current status, expected dataset structure, and whether the dataset is external when automated preparation is unavailable. |
 | `docs/example_validator/validation_rules.md` | Documents the validation rules implemented by the framework, including what each validator checks, why the rule exists, and how maintainers should interpret its result. |
 | `docs/example_validator/classification_policy.md` | Defines the example status model and failure classification policy, including which failure types block pull requests and which should be treated as known, pre-existing, or time-based failures. |
 | `docs/example_validator/local_validation.md` | Documents how contributors run validation locally, including example commands, expected usage patterns, local troubleshooting, and optional workflow-level local verification guidance. |
-| `.github/workflows/example_validator.yml` | Defines the GitHub Actions workflow that runs the validation tiers, collects results, and publishes CI summaries or report artifacts. |
+| `.github/workflows/code_CICD.yaml` | Defines the GitHub Actions workflow that runs the example validation tiers, invokes the reusable scripts under `.github/workflows/example_validator/`, collects results, and publishes CI summaries or report artifacts. |
 
 For local contributor validation, `validation_branch_manager.py` should act as a wrapper around `validation_runner.py`. Before validation starts, it should ensure the `upstream` remote is available, synchronize with `upstream/main`, compute the change set against the merge-base, and create the temporary rebased validation branch. After validation finishes, it should handle cleanup, including deleting the temporary validation branch.
 
@@ -831,7 +833,7 @@ Suggested Next Action:
 - Create a follow-up restoration issue if maintainers decide the example should be repaired.
 
 Reproduction:
-python .github/tools/example_validator/validation_runner.py --example examples/llm_simple_qa --smoke
+python .github/workflows/example_validator/validation_runner.py --example examples/llm_simple_qa --smoke
 ```
 
 ---
@@ -1418,7 +1420,7 @@ This distinction matters because `Alpha -> Gamma` and `Delta` answer different q
 
 Two concrete examples:
 
-1. Upstream adds more validation after `Alpha`. Suppose `Gamma` already includes multiple contributor-side changes, such as example code updates, configuration edits, and documentation adjustments. `Alpha -> Gamma` still only tells us what belongs to the contributor branch itself. But if `Beta` adds a stricter smoke test in `.github/workflows/example_validator.yml` or a new rule in `.github/tools/example_validator/`, the effective validation result is determined by the rebased state `Delta`. In that case, looking only at `Alpha -> Gamma` would still under-estimate the real validation surface, while validating `Gamma` after rebasing it onto `Beta` catches the newly introduced checks.
+1. Upstream adds more validation after `Alpha`. Suppose `Gamma` already includes multiple contributor-side changes, such as example code updates, configuration edits, and documentation adjustments. `Alpha -> Gamma` still only tells us what belongs to the contributor branch itself. But if `Beta` adds a stricter smoke test in `.github/workflows/code_CICD.yaml` or a new rule in `.github/workflows/example_validator/`, the effective validation result is determined by the rebased state `Delta`. In that case, looking only at `Alpha -> Gamma` would still under-estimate the real validation surface, while validating `Gamma` after rebasing it onto `Beta` catches the newly introduced checks.
 2. Upstream changes shared core code after `Alpha`. Suppose `Gamma` updates one example, but `Beta` also changes shared runner logic, config parsing, or metric handling used by multiple examples. `Alpha -> Gamma` still shows only the contributor's example edits, but the real question before opening or updating the PR is whether that example still works after those core changes are present. This is why the temporary validation branch rebases onto `Beta`: it can expose rebase conflicts, API mismatches, or extra affected tests that would not appear if validation stayed anchored to `Alpha`.
 
 In short, `Alpha` is still needed to identify the contributor-owned diff, `Beta` is the correct upstream baseline, and `Delta` is the branch that should actually be validated because it represents the contributor changes after rebasing onto the code that the pull request will be merged into.
@@ -1426,11 +1428,11 @@ In short, `Alpha` is still needed to identify the contributor-owned diff, `Beta`
 Local validation commands:
 
 ```bash
-python .github/tools/example_validator/validation_runner.py --static
-python .github/tools/example_validator/validation_runner.py --example examples/llm_simple_qa
-python .github/tools/example_validator/validation_runner.py --smoke examples/llm_simple_qa
-python .github/tools/example_validator/validation_runner.py --example examples/llm_simple_qa --all
-python .github/tools/example_validator/validation_runner.py --example examples/llm_simple_qa --jsonl
+python .github/workflows/example_validator/validation_runner.py --static
+python .github/workflows/example_validator/validation_runner.py --example examples/llm_simple_qa
+python .github/workflows/example_validator/validation_runner.py --smoke examples/llm_simple_qa
+python .github/workflows/example_validator/validation_runner.py --example examples/llm_simple_qa --all
+python .github/workflows/example_validator/validation_runner.py --example examples/llm_simple_qa --jsonl
 ```
 
 For workflow-level verification, contributors should also be able to run the relevant GitHub Actions jobs locally before pushing changes. The proposal should document using `nektos/act` to execute selected workflows or jobs from `.github/workflows/`, so contributors can check whether the same workflow logic used in CI still passes in a local environment.
