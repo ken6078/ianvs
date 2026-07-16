@@ -86,7 +86,7 @@ This project will detect and classify these failures. It will also repair `examp
 
 Currently, example failures are often discovered manually by users or contributors. Pull requests may unintentionally break previously validated examples because there is no systematic CI validation for example status.
 
-For LLM examples, this problem is amplified by model loading, tokenizer availability, device selection, external datasets, and heavyweight dependencies. CI should therefore distinguish between lightweight static checks, dependency checks, dataset-format checks, and optional runtime smoke tests.
+For LLM examples, this problem is amplified by model loading, tokenizer availability, device selection, external datasets, and heavyweight dependencies. CI should therefore distinguish between lightweight static requirement checks, dependency installation checks, dataset preparation or availability checks, and optional runtime smoke tests.
 
 ### 4. Increasing Maintainer Burden
 
@@ -110,7 +110,7 @@ The proposal contains three major parts:
 
 The CI framework shall detect examples affected by a pull request and execute the corresponding validation workflow only for those examples.
 
-Lightweight static checks will run across relevant examples on every pull request. More expensive dependency checks, dataset checks, and smoke tests will run only for changed examples or examples affected by shared code changes.
+Lightweight static requirement checks will run across relevant examples on every pull request. More expensive dependency installation checks, dataset preparation or availability checks, and smoke tests will run only for changed examples or examples affected by shared code changes.
 
 A broader validation suite will run on a scheduled basis to detect time-based failures such as dependency drift, dataset unavailability, model download failure, or CI environment changes.
 
@@ -129,7 +129,7 @@ For `examples/llm_simple_qa`, this proposal adds a focused target: the validatio
 The project will include:
 
 * Example inventory and classification
-* Static validation scripts
+* Static requirement validation scripts
 * Dependency validation
 * Dataset and JSONL validation support for selected examples
 * Model path and hardware assumption checks for LLM examples
@@ -405,11 +405,11 @@ The proposed framework adds a validation layer around existing Ianvs examples.
 
 ### Software Architecture Overview
 
-The following architecture diagram shows the main system layers of the proposed framework. At a high level, CI/CD event triggers invoke the validation modules under `.github/workflows/example_validator/`, shared storage provides the inventory and validation state used across the system, and the existing Ianvs node-side managers remain the execution environment whose behavior is observed and classified by the validation pipeline. Within the CI/CD layer, the key proposal-specific responsibilities are static validation, affected-example validation, regression detection, local validation support, and report generation.
+The following architecture diagram shows the main system layers of the proposed framework. At a high level, CI/CD event triggers invoke the validation modules under `.github/workflows/example_validator/`, shared storage provides the inventory and validation state used across the system, and the existing Ianvs node-side managers remain the execution environment whose behavior is observed and classified by the validation pipeline. Within the CI/CD layer, the key proposal-specific responsibilities are static validation, dynamic affected-example validation, regression detection, local validation support, and report generation.
 
 ![Software Architecture](images/Software-Architecture.png)
 
-Although the software architecture presents GitHub Actions as the CI/CD execution layer, the repository does not introduce a separate `.github/CICD/` directory because GitHub Actions only discovers workflow definitions under `.github/workflows/` ([document](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/approve-runs-from-forks)). Each validation concern therefore remains represented by a workflow YAML file under `.github/workflows/`, including renamed CI/CD workflow definitions such as `main_CICD.yaml`, `main_doc_CICD.yaml`, `fossa_CICD.yaml`, `codeql_analysis_CICD.yaml`, and `code_CICD.yaml`. The General Validators are third-party integrations, so they require only their corresponding YAML workflow files and do not introduce additional implementation files in the repository. In contrast, the Example Validator contains project-specific reusable logic, which is colocated under `.github/workflows/example_validator/` and invoked by the example-validation workflow.
+Although the software architecture presents GitHub Actions as the CI/CD execution layer, the repository does not introduce a separate `.github/CICD/` directory because GitHub Actions only discovers workflow definitions under `.github/workflows/` ([document](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/approve-runs-from-forks)). Each validation concern therefore remains represented by a workflow file under `.github/workflows/`, including renamed CI/CD workflow definitions such as `static_code_pylint_cicd.yaml`, `static_code_requirement_cicd.yaml`, `third_party_codeql_analysis_cicd.yaml`, `third_party_fossa_cicd.yaml`, and `dynamic_code_cicd.yaml`. The static example-requirement checks are separated into `static_code_requirement_cicd.yaml`, while `dynamic_code_cicd.yaml` is reserved for validation that prepares an execution environment, installs dependencies, or runs example smoke tests. The General Validators are third-party integrations, so they require only their corresponding workflow files and do not introduce additional implementation files in the repository. In contrast, the Example Validator contains project-specific reusable logic, which is colocated under `.github/workflows/example_validator/` and invoked by the static requirement and dynamic validation workflows.
 
 ```text
 Ianvs Repository
@@ -431,11 +431,11 @@ Ianvs Repository
 │
 └── .github/
     └── workflows/
-        ├── main_CICD.yaml              (Rename)
-        ├── main_doc_CICD.yaml          (Rename)
-        ├── fossa_CICD.yaml             (Rename)
-        ├── codeql_analysis_CICD.yaml   (Rename)
-        ├── code_CICD.yaml
+        ├── static_code_pylint_cicd.yaml            (Rename)
+        ├── third_party_codeql_analysis_cicd.ymal   (Rename)
+        ├── third_party_fossa_cicd.yaml             (Rename)
+        ├── dynamic_code_cicd.yaml
+        ├── static_code_requirement_cicd.yaml
         └── example_validator/
             ├── validation_runner.py
             ├── static_validator.py
@@ -470,7 +470,8 @@ The responsibilities of the proposed files are:
 | `docs/example_validator/validation_rules.md` | Documents the validation rules implemented by the framework, including what each validator checks, why the rule exists, and how maintainers should interpret its result. |
 | `docs/example_validator/classification_policy.md` | Defines the example status model and failure classification policy, including which failure types block pull requests and which should be treated as known, pre-existing, or time-based failures. |
 | `docs/example_validator/local_validation.md` | Documents how contributors run validation locally, including example commands, expected usage patterns, local troubleshooting, and optional workflow-level local verification guidance. |
-| `.github/workflows/code_CICD.yaml` | Defines the GitHub Actions workflow that runs the example validation tiers, invokes the reusable scripts under `.github/workflows/example_validator/`, collects results, and publishes CI summaries or report artifacts. |
+| `.github/workflows/static_code_requirement_cicd.yaml` | Defines the GitHub Actions workflow for Tier 0 static validation. It should run non-execution checks such as required-file presence, YAML and README consistency, dependency-file declarations, dataset and model path declarations, hardcoded local path detection, and hardware-assumption detection by invoking the reusable static validation logic under `.github/workflows/example_validator/`. |
+| `.github/workflows/dynamic_code_cicd.yaml` | Defines the GitHub Actions workflow for execution-oriented example validation tiers. It should run only the dynamic portions of validation, such as dependency installation, environment setup, dataset preparation when practical, smoke tests, regression comparison, result collection, and CI summaries or report artifacts. |
 
 For local contributor validation, `validation_branch_manager.py` should act as a wrapper around `validation_runner.py`. Before validation starts, it should ensure the `upstream` remote is available, synchronize with `upstream/main`, compute the change set against the merge-base, and create the temporary rebased validation branch. After validation finishes, it should handle cleanup, including deleting the temporary validation branch.
 
@@ -897,10 +898,8 @@ Purpose:
 Checks:
 
 * Dependency installation
-* Example-specific static checks
-* Dataset-format validation when lightweight
+* Dataset preparation or availability checks when practical
 * Lightweight smoke test
-* README consistency
 
 Exception:
 
@@ -929,10 +928,11 @@ Coverage:
 
 Checks:
 
-* Dependency installation when required by the example
+* Dependency installation
 * Example-specific static checks
 * Dataset-format validation when lightweight
-* Lightweight smoke test across the full target set
+* Lightweight smoke test
+* README consistency
 
 Shared changes may include:
 
@@ -967,8 +967,7 @@ Coverage:
 Checks:
 
 * Dependency installation when required by the example
-* Example-specific static checks
-* Dataset-format validation when lightweight
+* Dataset preparation or availability checks when practical
 * Lightweight smoke test across the full inventory
 
 Purpose:
@@ -1005,9 +1004,9 @@ This reset rule applies only when the Tier 2 pull request is merged before the o
 
 ### Validation-Level Detection Workflow
 
-The validation framework should make it easy to see which kinds of repository changes trigger which validation tiers. Pull request validation should begin by scanning changed files and mapping the detected change scope to the appropriate tier combination. Documentation-only changes should run Tier 0 static validation only. Changes within a single example should run Tier 0 plus Tier 1 for that example. Changes in Ianvs core code, shared validation code, workflows, or other shared components should run Tier 0 plus Tier 2 for the full validation target set.
+The validation framework should make it easy to see which kinds of repository changes trigger which validation tiers. Pull request validation should begin by scanning changed files and mapping the detected change scope to the appropriate tier combination. Documentation-only changes should run Tier 0 static validation through `static_code_requirement_cicd.yaml` only. Changes within a single example should run Tier 0 plus Tier 1 for that example. Changes in Ianvs core code, shared validation code, workflows, or other shared components should run Tier 0 plus Tier 2 for the full validation target set through `dynamic_code_cicd.yaml`.
 
-Scheduled validation should follow a separate trigger path. Instead of scanning pull request changes, it should scan the full example inventory and run Tier 0 plus Tier 3 scheduled validation as full-inventory smoke validation. In all cases, the resulting failures should pass through the same classification and reporting pipeline so maintainers can compare outcomes consistently across PR-triggered and time-triggered validation.
+Scheduled validation should follow a separate trigger path. Instead of scanning pull request changes, it should scan the full example inventory, refresh Tier 0 static validation results through `static_code_requirement_cicd.yaml`, and run Tier 3 scheduled validation through `dynamic_code_cicd.yaml` as full-inventory smoke validation. In all cases, the resulting failures should pass through the same classification and reporting pipeline so maintainers can compare outcomes consistently across PR-triggered and time-triggered validation.
 
 ![Validation-Level Detection Workflow](images/validation-level-detect-workflow.png)
 
@@ -1420,7 +1419,7 @@ This distinction matters because `Alpha -> Gamma` and `Delta` answer different q
 
 Two concrete examples:
 
-1. Upstream adds more validation after `Alpha`. Suppose `Gamma` already includes multiple contributor-side changes, such as example code updates, configuration edits, and documentation adjustments. `Alpha -> Gamma` still only tells us what belongs to the contributor branch itself. But if `Beta` adds a stricter smoke test in `.github/workflows/code_CICD.yaml` or a new rule in `.github/workflows/example_validator/`, the effective validation result is determined by the rebased state `Delta`. In that case, looking only at `Alpha -> Gamma` would still under-estimate the real validation surface, while validating `Gamma` after rebasing it onto `Beta` catches the newly introduced checks.
+1. Upstream adds more validation after `Alpha`. Suppose `Gamma` already includes multiple contributor-side changes, such as example code updates, configuration edits, and documentation adjustments. `Alpha -> Gamma` still only tells us what belongs to the contributor branch itself. But if `Beta` adds a stricter smoke test in `.github/workflows/dynamic_code_cicd.yaml`, or a new rule in `.github/workflows/example_validator/`, the effective validation result is determined by the rebased state `Delta`. In that case, looking only at `Alpha -> Gamma` would still under-estimate the real validation surface, while validating `Gamma` after rebasing it onto `Beta` catches the newly introduced checks.
 2. Upstream changes shared core code after `Alpha`. Suppose `Gamma` updates one example, but `Beta` also changes shared runner logic, config parsing, or metric handling used by multiple examples. `Alpha -> Gamma` still shows only the contributor's example edits, but the real question before opening or updating the PR is whether that example still works after those core changes are present. This is why the temporary validation branch rebases onto `Beta`: it can expose rebase conflicts, API mismatches, or extra affected tests that would not appear if validation stayed anchored to `Alpha`.
 
 In short, `Alpha` is still needed to identify the contributor-owned diff, `Beta` is the correct upstream baseline, and `Delta` is the branch that should actually be validated because it represents the contributor changes after rebasing onto the code that the pull request will be merged into.
