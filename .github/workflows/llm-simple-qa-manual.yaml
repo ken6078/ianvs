@@ -14,9 +14,19 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 180
 
+    env:
+      HF_HOME: /opt/huggingface
+      HF_HUB_CACHE: /opt/huggingface/hub
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Cache Hugging Face models
+        uses: actions/cache@v4
+        with:
+          path: /opt/huggingface
+          key: hf-llm-simple-qa-${{ runner.os }}-v1
 
       - name: Set up Python 3.8
         uses: actions/setup-python@v5
@@ -40,7 +50,6 @@ jobs:
       - name: Install llm_simple_qa dependencies
         run: |
           python -m pip install -r examples/llm_simple_qa/requirements.txt
-          python -m pip install resources/third_party/sedna-0.6.0.1-py3-none-any.whl
 
       - name: Prepare llm_simple_qa dataset
         run: |
