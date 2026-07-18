@@ -411,44 +411,51 @@ The following architecture diagram shows the main system layers of the proposed 
 
 Although the software architecture presents GitHub Actions as the CI/CD execution layer, the repository does not introduce a separate `.github/CICD/` directory because GitHub Actions only discovers workflow definitions under `.github/workflows/` ([document](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/approve-runs-from-forks)). Each validation concern therefore remains represented by a workflow file under `.github/workflows/`, including renamed CI/CD workflow definitions such as `static_code_pylint_cicd.yaml`, `static_code_requirement_cicd.yaml`, `third_party_codeql_analysis_cicd.yaml`, `third_party_fossa_cicd.yaml`, and `dynamic_code_cicd.yaml`. The static example-requirement checks are separated into `static_code_requirement_cicd.yaml`, while `dynamic_code_cicd.yaml` is reserved for validation that prepares an execution environment, installs dependencies, or runs example smoke tests. The General Validators are third-party integrations, so they require only their corresponding workflow files and do not introduce additional implementation files in the repository. In contrast, the Example Validator contains project-specific reusable logic, which is colocated under `.github/workflows/example_validator/` and invoked by the static requirement and dynamic validation workflows.
 
-```text
+```diff
 Ianvs Repository
-├── examples/
-│   ├── README.md (Show validation time and status matrix)
-│   ├── llm_simple_qa/
-│   │   └── scripts/
-│   │       └── prepare_dataset.py
-│   ├── example A/
-│   ├── example B/
-│   └── ...
-│
-├── docs/
-│   └── example_validator/
-│       ├── validation_rules.md
-│       ├── classification_policy.md
-│       ├── local_validation.md
-│       └── status_directions.md
-│
-└── .github/
-    └── workflows/
-        ├── static_code_pylint_cicd.yaml            (Rename)
-        ├── third_party_codeql_analysis_cicd.ymal   (Rename)
-        ├── third_party_fossa_cicd.yaml             (Rename)
-        ├── dynamic_code_cicd.yaml
-        ├── static_code_requirement_cicd.yaml
-        └── example_validator/
-            ├── validation_runner.py
-            ├── static_validator.py
-            ├── dependency_validator.py
-            ├── smoke_test_validator.py
-            ├── services/
-            │   ├── validation_branch_manager.py
-            │   ├── inventory_loader.py
-            │   ├── regression_detector.py
-            │   └── report_generator.py
-            └── data/
-                └── example_inventory.yaml
+  ├── examples/
++ │   ├── README.md (Show validation time and status matrix)
+  │   ├── llm_simple_qa/
++ │   │   └── scripts/
++ │   │       └── prepare_dataset.py
+  │   ├── example A/
+  │   ├── example B/
+  │   └── ...
+  │
+  ├── docs/
++ │   └── example_validator/
++ │       ├── validation_rules.md
++ │       ├── classification_policy.md
++ │       ├── local_validation.md
++ │       └── status_directions.md
+  │
+  └── .github/
+      └── workflows/
+-         ├── main-doc.yaml                           (Delete)
+M         ├── static_code_pylint_cicd.yaml            (Rename)
+M         ├── third_party_codeql_analysis_cicd.ymal   (Rename)
+M         ├── third_party_fossa_cicd.yaml             (Rename)
++         ├── dynamic_code_cicd.yaml
++         ├── static_code_requirement_cicd.yaml
++         └── example_validator/
++             ├── validation_runner.py
++             ├── static_validator.py
++             ├── dependency_validator.py
++             ├── smoke_test_validator.py
++             ├── services/
++             │   ├── validation_branch_manager.py
++             │   ├── inventory_loader.py
++             │   ├── regression_detector.py
++             │   └── report_generator.py
++             └── data/
++                 └── example_inventory.yaml
 ```
+
+> [!WARNING]
+> Renaming workflow files marked as `(Rename)` will hide the previous GitHub Actions run history for those workflows.
+
+> [!NOTE]
+> Delete `main-doc.yaml` because it does not perform any meaningful CI or validation work in practice, so the proposal removes the inactive workflow instead of carrying it forward.
 
 The responsibilities of the proposed files are:
 
