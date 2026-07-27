@@ -19,6 +19,7 @@ from pathlib import Path
 from fpdf import FPDF
 from core.common import utils
 
+'/home'
 
 class PDF(FPDF):
     def __init__(self):
