@@ -1,0 +1,60 @@
+name: "Dynamic Code Requirement Verification"
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'examples/**'
+      - 'core/**'
+      - '.github/workflows/validator/**'
+      - '.github/workflows/dynamic_code_cicd.yaml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'examples/**'
+      - 'core/**'
+      - '.github/workflows/validator/**'
+      - '.github/workflows/dynamic_code_cicd.yaml'
+  schedule:
+    - cron: '31 15 * * 2'
+
+jobs:
+  detect-change-examples:
+    runs-on: ubuntu-latest
+    outputs:
+      mode: ${{ steps.check_examples.outputs.mode }}
+      run_all: ${{ steps.check_examples.outputs.run_all }}
+      examples_changed: ${{ steps.check_examples.outputs.examples_changed }}
+      changed_examples: ${{ steps.check_examples.outputs.changed_examples }}
+      changed_files: ${{ steps.check_examples.outputs.changed_files }}
+      check_items: ${{ steps.check_examples.outputs.check_items }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.8'
+
+      - name: Add upstream remote
+        run: |
+          git remote remove upstream || true
+          git remote add upstream https://github.com/kubeedge/ianvs.git
+          git fetch --no-tags --depth=1 upstream +refs/heads/main:refs/remotes/upstream/main
+          git rev-parse --verify refs/remotes/upstream/main
+
+      - name: Check changed examples
+        id: check_examples
+        run: |
+          extra_args=()
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            extra_args+=(--schedule)
+          else
+            extra_args+=(--base-ref upstream/main --head-ref HEAD)
+          fi
+          python .github/workflows/validator/services/inventory_loader.py \
+            --mode dynamic \
+            --inventory .github/workflows/validator/data/example_inventory.yaml \
+            "${extra_args[@]}"
