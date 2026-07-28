@@ -367,13 +367,21 @@ def render_markdown(report: CombinedReport) -> str:
         lines.append(
             "| `{}` | {} | {} | {} |".format(
                 escape_table(example.path),
-                PASS if example.passed else FAIL,
+                example_result(example),
                 example.count(FAIL),
                 example.count(SKIP),
             )
         )
 
     return "\n".join(lines).rstrip() + "\n"
+
+
+def example_result(example: ExampleResult) -> str:
+    if example.count(FAIL):
+        return FAIL
+    if example.count(SKIP):
+        return SKIP
+    return PASS
 
 
 def append_regression_summary(rendered: str, regression_json_path: Path) -> str:
