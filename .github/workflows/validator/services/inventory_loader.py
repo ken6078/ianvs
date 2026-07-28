@@ -37,8 +37,9 @@ Modes:
         include examples that are not yet active.
 
     dynamic:
-        Inherits static behavior. If files under core/ or .github/workflows/
-        changed, select all active examples from the inventory.
+        Select active changed examples from the inventory. If files under core/
+        or .github/workflows/ changed, select all active examples from the
+        inventory.
 
 GitHub Actions outputs:
     mode, run_all, examples_changed, changed_examples, changed_files, check_items
@@ -223,7 +224,10 @@ def detect_changes(
     mode: str,
     inventory_path: Path,
 ) -> dict:
-    examples = load_inventory_examples(inventory_path, active_only=mode != MODE_STATIC)
+    examples = load_inventory_examples(
+        inventory_path,
+        active_only=(mode == MODE_DYNAMIC),
+    )
     changed_files = git_lines(["diff", "--name-only", base_ref, head_ref])
     if mode == MODE_STATIC:
         changed_files = [
@@ -233,7 +237,8 @@ def detect_changes(
         ]
 
     run_all = mode == MODE_DYNAMIC and should_run_all_dynamic(changed_files)
-    selected_examples = examples if run_all else detect_static_examples(changed_files, examples)
+    changed_examples = detect_static_examples(changed_files, examples)
+    selected_examples = examples if run_all else changed_examples
     return inventory_selection_report(
         mode=mode,
         examples=selected_examples,

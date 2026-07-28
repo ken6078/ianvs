@@ -21,8 +21,27 @@ import sys
 from pathlib import Path
 from typing import List, Mapping, Optional, Sequence
 
+from dependency_validator import (
+    INSTALL_MODE_DRY_RUN,
+    INSTALL_MODE_INSTALL,
+    INSTALL_MODE_SKIP,
+)
+from dependency_validator import validate_examples as validate_dependencies
+from smoke_test_validator import (
+    DEFAULT_TIMEOUT_SECONDS,
+    validate_examples as validate_smoke_examples,
+)
+from smoke_test_validator import validate_jsonl_examples
 from services.inventory_loader import DEFAULT_INVENTORY_PATH, load_inventory_examples
-from static_validator import render_json, render_markdown, validate_examples
+from static_validator import (
+    SKIP,
+    CheckResult,
+    ExampleReport,
+    StaticValidationReport,
+    render_json,
+    render_markdown,
+)
+from static_validator import validate_examples as validate_static_examples
 
 REPORT_FORMAT_JSON = "json"
 REPORT_FORMAT_MARKDOWN = "markdown"
@@ -54,6 +73,11 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Run Tier 0 static validation.",
     )
     parser.add_argument(
+        "--dependency",
+        action="store_true",
+        help="Run dependency declaration validation.",
+    )
+    parser.add_argument(
         "--format",
         choices=(REPORT_FORMAT_MARKDOWN, REPORT_FORMAT_JSON),
         default=REPORT_FORMAT_MARKDOWN,
@@ -67,12 +91,33 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--smoke",
         action="store_true",
-        help="Reserved for future smoke validation support.",
+        help="Run runtime smoke validation.",
     )
     parser.add_argument(
         "--jsonl",
         action="store_true",
-        help="Reserved for future JSONL validation support.",
+        help="Run JSONL dataset validation.",
+    )
+    parser.add_argument(
+        "--pip-install-check",
+        action="store_true",
+        help="Run pip install --dry-run for example dependency files.",
+    )
+    parser.add_argument(
+        "--pip-install",
+        action="store_true",
+        help="Run real pip install for example dependency files.",
+    )
+    parser.add_argument(
+        "--no-execute-smoke",
+        action="store_true",
+        help="Prepare and validate smoke data without running Ianvs.",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=DEFAULT_TIMEOUT_SECONDS,
+        help="Timeout in seconds for dependency install checks and smoke commands.",
     )
     return parser.parse_args(argv)
 
@@ -82,8 +127,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     repo_root = Path.cwd()
     inventory_path = repo_root / args.inventory
 
-    static_mode = args.static or not (args.smoke or args.jsonl)
-    include_inactive = static_mode and bool(args.example)
+    static_mode = args.static or not (args.dependency or args.smoke or args.jsonl)
+    include_inactive = bool(args.example)
     examples = load_inventory_examples(inventory_path, active_only=not include_inactive)
     selected_examples = select_examples(examples, args.example, args.all)
 
@@ -91,20 +136,49 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print("No inventory examples matched the requested selection.", file=sys.stderr)
         return 1
 
-    if args.smoke or args.jsonl:
-        print(
-            "Smoke and JSONL validation are not implemented in this runner yet.",
-            file=sys.stderr,
-        )
-        return 1
+    reports = []
+    dynamic_examples = selected_examples
+    if not static_mode:
+        dynamic_examples = active_examples(selected_examples)
+        skipped_examples = inactive_examples(selected_examples)
+        if skipped_examples:
+            reports.append(skip_dynamic_examples(skipped_examples))
 
     if static_mode:
-        report = validate_examples(repo_root=repo_root, examples=selected_examples)
-        rendered = render_report(report, args.format)
-        write_or_print_report(rendered, args.report)
-        return 0
+        reports.append(
+            validate_static_examples(repo_root=repo_root, examples=selected_examples)
+        )
+    if args.dependency and dynamic_examples:
+        reports.append(
+            validate_dependencies(
+                repo_root=repo_root,
+                examples=dynamic_examples,
+                install_mode=dependency_install_mode(args),
+                timeout_seconds=args.timeout,
+            )
+        )
+    if args.jsonl and dynamic_examples:
+        reports.append(
+            validate_jsonl_examples(
+                repo_root=repo_root,
+                examples=dynamic_examples,
+                timeout_seconds=args.timeout,
+            )
+        )
+    if args.smoke and dynamic_examples:
+        reports.append(
+            validate_smoke_examples(
+                repo_root=repo_root,
+                examples=dynamic_examples,
+                execute=not args.no_execute_smoke,
+                timeout_seconds=args.timeout,
+            )
+        )
 
-    return 1
+    report = merge_reports(reports)
+    rendered = render_report(report, args.format)
+    write_or_print_report(rendered, args.report)
+    return 0 if report.passed else 1
 
 
 def select_examples(
@@ -147,6 +221,81 @@ def render_report(report, report_format: str) -> str:
     if report_format == REPORT_FORMAT_JSON:
         return render_json(report)
     return render_markdown(report)
+
+
+def dependency_install_mode(args: argparse.Namespace) -> str:
+    if args.pip_install:
+        return INSTALL_MODE_INSTALL
+    if args.pip_install_check:
+        return INSTALL_MODE_DRY_RUN
+    return INSTALL_MODE_SKIP
+
+
+def active_examples(
+    examples: Sequence[Mapping[str, object]],
+) -> List[Mapping[str, object]]:
+    return [
+        example
+        for example in examples
+        if str(example.get("status", "active")) == "active"
+    ]
+
+
+def inactive_examples(
+    examples: Sequence[Mapping[str, object]],
+) -> List[Mapping[str, object]]:
+    return [
+        example
+        for example in examples
+        if str(example.get("status", "active")) != "active"
+    ]
+
+
+def skip_dynamic_examples(
+    examples: Sequence[Mapping[str, object]],
+) -> StaticValidationReport:
+    reports = []
+    for example in examples:
+        example_path = normalize_selector(str(example.get("path", "")))
+        example_name = str(example.get("name") or example_path)
+        status = str(example.get("status", "unknown"))
+        reports.append(
+            ExampleReport(
+                name=example_name,
+                path=example_path,
+                checks=[
+                    CheckResult(
+                        name="Dynamic validation eligibility",
+                        status=SKIP,
+                        message=(
+                            "Example status is '{}'; dynamic validation is skipped "
+                            "until the inventory marks it as active."
+                        ).format(status),
+                        file=str(example.get("benchmark_file") or example_path),
+                        details=[
+                            "inventory status: {}".format(status),
+                            "example path: {}".format(example_path),
+                        ],
+                    )
+                ],
+            )
+        )
+    return StaticValidationReport(reports=reports)
+
+
+def merge_reports(reports: Sequence[StaticValidationReport]) -> StaticValidationReport:
+    merged_by_path = {}
+    for report in reports:
+        for example_report in report.reports:
+            key = example_report.path
+            if key not in merged_by_path:
+                merged_by_path[key] = example_report
+                continue
+            merged_by_path[key].checks.extend(example_report.checks)
+
+    return StaticValidationReport(
+        reports=sorted(merged_by_path.values(), key=lambda item: (item.path, item.name))
+    )
 
 
 def write_or_print_report(rendered: str, report_path: str) -> None:
