@@ -259,6 +259,13 @@ def skip_dynamic_examples(
         example_path = normalize_selector(str(example.get("path", "")))
         example_name = str(example.get("name") or example_path)
         status = str(example.get("status", "unknown"))
+        print(
+            "Skipping dynamic validation for {} because inventory status is '{}'.".format(
+                example_name,
+                status,
+            ),
+            file=sys.stderr,
+        )
         reports.append(
             ExampleReport(
                 name=example_name,

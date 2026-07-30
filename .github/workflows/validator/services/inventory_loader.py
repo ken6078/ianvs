@@ -37,9 +37,10 @@ Modes:
         include examples that are not yet active.
 
     dynamic:
-        Select active changed examples from the inventory. If files under core/
-        or .github/workflows/ changed, select all active examples from the
-        inventory.
+        Select changed examples from the inventory, including examples that are
+        not yet active so dynamic validation can report them as skipped. If
+        files under core/ or .github/workflows/ changed, select all examples
+        from the inventory.
 
 GitHub Actions outputs:
     mode, run_all, examples_changed, changed_examples, changed_files, check_items
@@ -226,7 +227,7 @@ def detect_changes(
 ) -> dict:
     examples = load_inventory_examples(
         inventory_path,
-        active_only=(mode == MODE_DYNAMIC),
+        active_only=False,
     )
     changed_files = git_lines(["diff", "--name-only", base_ref, head_ref])
     if mode == MODE_STATIC:
