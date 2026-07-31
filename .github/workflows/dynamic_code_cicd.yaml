@@ -288,6 +288,7 @@ jobs:
           fi
           python .github/workflows/validator/services/report_generator.py \
             --results validation-results \
+            --mode dynamic \
             --output dynamic-validation-report.md \
             --regression-json regression-report.json \
             --step-summary \

@@ -198,6 +198,8 @@ jobs:
           python .github/workflows/validator/services/regression_detector.py \
             --base-results baseline-results \
             --head-results validation-results \
+            --base-ref "${{ github.event.pull_request.base.sha }}" \
+            --head-ref HEAD \
             --json-output regression-report.json \
             --json-only
 
@@ -259,6 +261,7 @@ jobs:
           fi
           python .github/workflows/validator/services/report_generator.py \
             --results validation-results \
+            --mode static \
             --output validation-report.md \
             --regression-json regression-report.json \
             --step-summary \
