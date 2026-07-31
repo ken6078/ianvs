@@ -30,8 +30,12 @@ from typing import List, Mapping, Optional, Sequence
 
 PASS = "PASS"
 FAIL = "FAIL"
+ERROR = "ERROR"
+WARNING = "WARNING"
 SKIP = "SKIP"
 YAML_SUFFIXES = (".yaml", ".yml")
+BLOCKING_STATUSES = {ERROR, FAIL}
+REPORT_DETAIL_STATUSES = BLOCKING_STATUSES | {WARNING, SKIP}
 
 HARDCODED_PATH_RE = re.compile(
     r"(?:^|[\s'\"`=:(])(?P<path>(?:/(?!/)[^\s'\"`,)]+)|(?:[A-Za-z]:[\\/](?![\\/])[^\s'\"`,)]+))",
@@ -67,7 +71,7 @@ class ExampleReport:
 
     @property
     def passed(self) -> bool:
-        return not any(check.status == FAIL for check in self.checks)
+        return not any(check.status in BLOCKING_STATUSES for check in self.checks)
 
 
 @dataclass
@@ -120,7 +124,7 @@ def validate_example(repo_root: Path, example: Mapping[str, object]) -> ExampleR
 
 def render_markdown(report: StaticValidationReport) -> str:
     lines = ["# Static Validation Report", ""]
-    lines.append("Overall result: {}".format(PASS if report.passed else FAIL))
+    lines.append("Overall result: {}".format(_report_result(report)))
 
     for example_report in report.reports:
         lines.extend(["", "## Example", "", example_report.path, "", "### Validation Result", ""])
@@ -129,7 +133,9 @@ def render_markdown(report: StaticValidationReport) -> str:
             lines.append("| {} | {} |".format(_escape_table(check.name), check.status))
 
         failures = [
-            check for check in example_report.checks if check.status in (FAIL, SKIP)
+            check
+            for check in example_report.checks
+            if check.status in REPORT_DETAIL_STATUSES
         ]
         if failures:
             lines.extend(["", "### Details", ""])
@@ -151,6 +157,22 @@ def render_markdown(report: StaticValidationReport) -> str:
                 lines.append("")
 
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _report_result(report: StaticValidationReport) -> str:
+    if any(
+        check.status == ERROR
+        for example_report in report.reports
+        for check in example_report.checks
+    ):
+        return ERROR
+    if any(
+        check.status == WARNING
+        for example_report in report.reports
+        for check in example_report.checks
+    ):
+        return WARNING
+    return PASS if report.passed else FAIL
 
 
 def render_json(report: StaticValidationReport) -> str:
@@ -187,12 +209,18 @@ def _check_path_exists(
 ) -> None:
     path = repo_root / repo_path
     exists = path.is_dir() if is_dir else path.is_file()
+    details = ()
+    if not exists:
+        # A missing path has no source line to point at.  Make that explicit so
+        # consumers do not mistake the path itself for a line-level finding.
+        details = ("{} -> (Line N/A): required path is missing".format(repo_path),)
     _append_check(
         report,
         name=name,
-        status=PASS if exists else FAIL,
+        status=PASS if exists else ERROR,
         file=repo_path,
         message="Required path exists." if exists else "Required path is missing.",
+        details=details,
     )
 
 
@@ -214,7 +242,7 @@ def _check_yaml_syntax(report: ExampleReport, files: Sequence[Path]) -> None:
         try:
             yaml.safe_load(path.read_text(encoding="utf-8"))
         except yaml.YAMLError as exc:
-            failures.append("{}: {}".format(_repo_display_path(path), exc))
+            failures.append(_format_yaml_error(path, exc))
 
     _append_issue_check(
         report,
@@ -222,6 +250,7 @@ def _check_yaml_syntax(report: ExampleReport, files: Sequence[Path]) -> None:
         issues=failures,
         fail_message="Invalid YAML syntax found.",
         pass_message="All YAML files parsed successfully.",
+        failure_status=ERROR,
     )
 
 
@@ -230,28 +259,47 @@ def _check_repo_path_references(
     repo_root: Path,
     files: Sequence[Path],
 ) -> None:
-    missing = []
+    missing_code_or_config = []
+    missing_parent_references = []
     for path in files:
         text = _read_text(path)
         for match in REPO_PATH_RE.finditer(text):
             repo_path = _normalize_repo_path(match.group("path"))
             if _looks_like_generated_dataset_path(repo_path):
                 continue
-            if not (repo_root / repo_path).exists():
-                missing.append(
-                    _format_detected_value(
-                        path,
-                        _line_number_for_match(text, match, "path"),
-                        repo_path,
-                    )
+            if (repo_root / repo_path).exists():
+                continue
+
+            detail = _format_detected_value(
+                path,
+                _line_number_for_match(text, match, "path"),
+                repo_path,
+            )
+            if _is_code_or_config_reference(repo_path):
+                missing_code_or_config.append(detail)
+                continue
+
+            parent_path = _referenced_parent_path(repo_path)
+            if parent_path and not (repo_root / parent_path).is_dir():
+                missing_parent_references.append(
+                    "{} (parent folder missing: {})".format(detail, parent_path)
                 )
 
     _append_issue_check(
         report,
         name="Repository path references exist",
-        issues=sorted(set(missing)),
-        fail_message="Broken repository-local path references found.",
-        pass_message="Repository-local path references resolve.",
+        issues=sorted(set(missing_code_or_config)),
+        fail_message="Broken repository-local Python/YAML path references found.",
+        pass_message="Repository-local Python/YAML path references resolve.",
+        failure_status=ERROR,
+    )
+    _append_issue_check(
+        report,
+        name="Repository path parent references exist",
+        issues=sorted(set(missing_parent_references)),
+        fail_message="Repository-local non-code path references have missing parent folders.",
+        pass_message="Repository-local non-code path reference parent folders resolve.",
+        failure_status=WARNING,
     )
 
 
@@ -267,6 +315,7 @@ def _check_hardcoded_paths(
         issues=matches,
         fail_message="Contributor-specific absolute paths were found.",
         pass_message="No contributor-specific absolute paths found.",
+        failure_status=WARNING,
     )
 
 
@@ -282,6 +331,7 @@ def _check_local_model_paths(
         issues=matches,
         fail_message="Local-only model path references were found.",
         pass_message="No local-only model paths found.",
+        failure_status=WARNING,
     )
 
 
@@ -295,12 +345,19 @@ def _check_cuda_only_assumptions(
         if path.suffix != ".py":
             continue
         text = _read_text(path)
-        if not CUDA_ONLY_RE.search(text):
+        match = CUDA_ONLY_RE.search(text)
+        if not match:
             continue
         has_fallback = "torch.cuda.is_available()" in text and "cpu" in text
         if has_fallback:
             continue
-        failures.append(_repo_display_path(path))
+        failures.append(
+            _format_detected_value(
+                path,
+                _line_number_for_match(text, match),
+                match.group(0),
+            )
+        )
 
     _append_issue_check(
         report,
@@ -308,6 +365,7 @@ def _check_cuda_only_assumptions(
         issues=failures,
         fail_message="CUDA-only device assumptions were found.",
         pass_message="No CUDA-only device assumptions found.",
+        failure_status=WARNING,
     )
 
 
@@ -333,7 +391,14 @@ def _check_metric_empty_pair_guard(report: ExampleReport, repo_root: Path, examp
         if has_guard:
             guarded.append(_repo_display_path(path))
         else:
-            risky.append(_repo_display_path(path))
+            for match in re.finditer(r"/\s*len\(", text):
+                risky.append(
+                    _format_detected_value(
+                        path,
+                        _line_number_for_match(text, match),
+                        match.group(0),
+                    )
+                )
 
     _append_issue_check(
         report,
@@ -342,6 +407,7 @@ def _check_metric_empty_pair_guard(report: ExampleReport, repo_root: Path, examp
         fail_message="Metric division may crash on empty prediction-answer pairs.",
         pass_message="Metric files include an empty-pair guard or do not divide by a collection length.",
         pass_details=guarded,
+        failure_status=WARNING,
     )
 
 
@@ -369,6 +435,18 @@ def _format_detected_value(path: Path, line_number: int, value: str) -> str:
     return "{} -> (Line {}): {}".format(_repo_display_path(path), line_number, value)
 
 
+def _format_yaml_error(path: Path, error: object) -> str:
+    """Render a YAML parser error as a single line-level diagnostic."""
+    mark = getattr(error, "problem_mark", None)
+    if mark is not None and hasattr(mark, "line"):
+        return "{} -> (Line {}): {}".format(
+            _repo_display_path(path),
+            int(mark.line) + 1,
+            getattr(error, "problem", str(error)),
+        )
+    return "{} -> (Line N/A): {}".format(_repo_display_path(path), error)
+
+
 def _line_number_for_match(text: str, match: re.Match, group_name: str = "") -> int:
     start = -1
     if group_name:
@@ -388,12 +466,13 @@ def _append_issue_check(
     fail_message: str,
     pass_message: str,
     pass_details: Sequence[str] = (),
+    failure_status: str = ERROR,
 ) -> None:
     has_issues = bool(issues)
     _append_check(
         report,
         name=name,
-        status=FAIL if has_issues else PASS,
+        status=failure_status if has_issues else PASS,
         message=fail_message if has_issues else pass_message,
         details=issues if has_issues else pass_details,
     )
@@ -478,6 +557,15 @@ def _normalize_repo_path(value: str) -> str:
 
 def _looks_like_generated_dataset_path(repo_path: str) -> bool:
     return "/dataset/" in repo_path
+
+
+def _is_code_or_config_reference(repo_path: str) -> bool:
+    return Path(repo_path).suffix.lower() in (".py", ".yaml", ".yml")
+
+
+def _referenced_parent_path(repo_path: str) -> str:
+    parent = Path(repo_path).parent.as_posix()
+    return "" if parent == "." else _normalize_repo_path(parent)
 
 
 def _read_text(path: Path) -> str:

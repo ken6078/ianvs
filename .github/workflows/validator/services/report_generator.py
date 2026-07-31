@@ -36,7 +36,15 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 PASS = "PASS"
 FAIL = "FAIL"
+ERROR = "ERROR"
+WARNING = "WARNING"
 SKIP = "SKIP"
+MODE_STATIC = "static"
+MODE_DYNAMIC = "dynamic"
+BLOCKING_STATUSES = {ERROR, FAIL}
+DYNAMIC_ELIGIBILITY_CHECK = "Dynamic validation eligibility"
+UNVALIDATED_REASON = "CI/CD ongoing"
+ONGOING_REASON = "Example ongoing"
 COMMENT_MARKER = "<!-- ianvs-example-validation-report -->"
 MAX_COMMENT_BODY_CHARS = 60000
 DEFAULT_RESULT_PATTERNS = ("validation-results", "validator-results")
@@ -68,6 +76,15 @@ class ExampleResult:
     def count(self, status: str) -> int:
         return sum(check.issue_count for check in self.checks if check.status == status)
 
+    def count_any(self, statuses: Sequence[str]) -> int:
+        return sum(
+            check.issue_count for check in self.checks if check.status in statuses
+        )
+
+    @property
+    def has_blocking_errors(self) -> bool:
+        return any(check.status in BLOCKING_STATUSES for check in self.checks)
+
 
 @dataclass
 class CombinedReport:
@@ -76,10 +93,13 @@ class CombinedReport:
 
     @property
     def passed(self) -> bool:
-        return all(example.passed for example in self.examples)
+        return all(not example.has_blocking_errors for example in self.examples)
 
     def check_count(self, status: str) -> int:
         return sum(example.count(status) for example in self.examples)
+
+    def check_count_any(self, statuses: Sequence[str]) -> int:
+        return sum(example.count_any(statuses) for example in self.examples)
 
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
@@ -91,6 +111,15 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         action="append",
         default=[],
         help="JSON result file, directory, or glob. Can be repeated.",
+    )
+    parser.add_argument(
+        "--mode",
+        choices=(MODE_STATIC, MODE_DYNAMIC),
+        default=MODE_DYNAMIC,
+        help=(
+            "Report layout. Static includes ERROR and WARNING; "
+            "dynamic keeps the error-only layout."
+        ),
     )
     parser.add_argument(
         "--output",
@@ -138,8 +167,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 2
 
     report = load_combined_report(result_paths)
-    rendered = render_full_report(report, regression_json=args.regression_json)
-    publish_report(rendered, report, args)
+    rendered = render_full_report(
+        report,
+        mode=args.mode,
+        regression_json=args.regression_json,
+    )
+    publish_report(rendered, report, args, mode=args.mode)
 
     if report.passed or args.no_fail:
         return 0
@@ -214,6 +247,7 @@ def merge_duplicate_examples(examples: Sequence[ExampleResult]) -> List[ExampleR
         target = merged[key]
         target.passed = target.passed and example.passed
         target.checks = merge_checks([*target.checks, *example.checks])
+        target.passed = not target.has_blocking_errors
 
     return list(merged.values())
 
@@ -261,12 +295,13 @@ def parse_examples(payload: Dict[str, object], source_path: Path) -> List[Exampl
         if not isinstance(raw_example, dict):
             continue
 
+        checks = parse_checks(raw_example.get("checks", []))
         examples.append(
             ExampleResult(
                 name=str(raw_example.get("name") or raw_example.get("path") or ""),
                 path=str(raw_example.get("path") or raw_example.get("name") or ""),
-                passed=bool(raw_example.get("passed", False)),
-                checks=parse_checks(raw_example.get("checks", [])),
+                passed=not any(check.status in BLOCKING_STATUSES for check in checks),
+                checks=checks,
             )
         )
     return examples
@@ -298,10 +333,21 @@ def string_list(value: object) -> List[str]:
     return [str(item) for item in value]
 
 
-def render_full_report(report: CombinedReport, regression_json: str = "") -> str:
-    rendered = render_markdown(report)
+def render_full_report(
+    report: CombinedReport,
+    mode: str = MODE_DYNAMIC,
+    regression_json: str = "",
+) -> str:
+    rendered = render_markdown(report, mode=mode)
     if regression_json:
-        rendered = append_regression_summary(rendered, Path(regression_json))
+        rendered = append_regression_summary(
+            rendered,
+            Path(regression_json),
+            mode=mode,
+            excluded_examples=dynamic_skipped_example_paths(report)
+            if mode == MODE_DYNAMIC
+            else (),
+        )
     return append_collected_result_files(rendered, report.source_files)
 
 
@@ -309,6 +355,7 @@ def publish_report(
     rendered: str,
     report: CombinedReport,
     args: argparse.Namespace,
+    mode: str = MODE_DYNAMIC,
 ) -> None:
     write_or_print_report(rendered, args.output)
 
@@ -316,7 +363,7 @@ def publish_report(
         append_step_summary(rendered)
 
     if args.annotations:
-        emit_annotations(report)
+        emit_annotations(report, mode=mode)
 
     if args.pr_comment:
         maybe_update_pr_comment(rendered)
@@ -333,19 +380,29 @@ def write_or_print_report(rendered: str, output: str) -> None:
     print("Combined validation report written to {}".format(output_path))
 
 
-def render_markdown(report: CombinedReport) -> str:
-    result = PASS if report.passed else FAIL
+def render_markdown(
+    report: CombinedReport,
+    mode: str = MODE_DYNAMIC,
+) -> str:
+    if mode == MODE_STATIC:
+        return render_static_markdown(report)
+    return render_dynamic_markdown(report)
+
+
+def render_static_markdown(report: CombinedReport) -> str:
+    result = static_overall_result(report)
     lines = [
         COMMENT_MARKER,
-        "# Ianvs Example Validation Report",
+        "# Ianvs Static Validation Report",
         "",
         "**Overall result:** {}".format(result),
         "",
-        "| Examples | Errors | Skipped checks |",
-        "|---:|---:|---:|",
-        "| {} | {} | {} |".format(
+        "| Examples | Errors | Warnings | Skipped checks |",
+        "|---:|---:|---:|---:|",
+        "| {} | {} | {} | {} |".format(
             len(report.examples),
-            report.check_count(FAIL),
+            report.check_count_any(BLOCKING_STATUSES),
+            report.check_count(WARNING),
             report.check_count(SKIP),
         ),
         "",
@@ -359,16 +416,17 @@ def render_markdown(report: CombinedReport) -> str:
         [
             "## Example Summary",
             "",
-            "| Example | Result | Errors | Skip |",
-            "|---|---:|---:|---:|",
+            "| Example | Result | Errors | Warnings | Skip |",
+            "|---|---:|---:|---:|---:|",
         ]
     )
     for example in report.examples:
         lines.append(
-            "| `{}` | {} | {} | {} |".format(
+            "| `{}` | {} | {} | {} | {} |".format(
                 escape_table(example.path),
-                example_result(example),
-                example.count(FAIL),
+                static_example_result(example),
+                example.count_any(BLOCKING_STATUSES),
+                example.count(WARNING),
                 example.count(SKIP),
             )
         )
@@ -376,15 +434,137 @@ def render_markdown(report: CombinedReport) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def example_result(example: ExampleResult) -> str:
-    if example.count(FAIL):
+def render_dynamic_markdown(report: CombinedReport) -> str:
+    skipped_examples = dynamic_skipped_examples(report)
+    runnable_examples = [
+        example for example in report.examples if example.path not in skipped_examples
+    ]
+    result = PASS if all(
+        not example.has_blocking_errors for example in runnable_examples
+    ) else FAIL
+    lines = [
+        COMMENT_MARKER,
+        "# Ianvs Dynamic Validation Report",
+        "",
+        "**Overall result:** {}".format(result),
+        "",
+        "| Examples | Errors | Skipped checks |",
+        "|---:|---:|---:|",
+        "| {} | {} | {} |".format(
+            len(runnable_examples),
+            sum(
+                example.count_any(BLOCKING_STATUSES)
+                for example in runnable_examples
+            ),
+            sum(example.count(SKIP) for example in runnable_examples),
+        ),
+        "",
+    ]
+
+    if not runnable_examples and not skipped_examples:
+        lines.append("No validation results were collected.")
+        return "\n".join(lines).rstrip() + "\n"
+
+    if runnable_examples:
+        lines.extend(
+            [
+                "## Example Summary",
+                "",
+                "| Example | Result | Errors | Skip |",
+                "|---|---:|---:|---:|",
+            ]
+        )
+        for example in runnable_examples:
+            lines.append(
+                "| `{}` | {} | {} | {} |".format(
+                    escape_table(example.path),
+                    dynamic_example_result(example),
+                    example.count_any(BLOCKING_STATUSES),
+                    example.count(SKIP),
+                )
+            )
+
+    if skipped_examples:
+        lines.extend(
+            [
+                "",
+                "## Skipped Examples",
+                "",
+                "| Example | Reason |",
+                "|---|---|",
+            ]
+        )
+        for example_path, reason in sorted(skipped_examples.items()):
+            lines.append("| `{}` | {} |".format(escape_table(example_path), reason))
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def dynamic_skipped_examples(report: CombinedReport) -> Dict[str, str]:
+    skipped = {}
+    for example in report.examples:
+        reason = dynamic_skip_reason(example)
+        if reason:
+            skipped[example.path] = reason
+    return skipped
+
+
+def dynamic_skipped_example_paths(report: CombinedReport) -> List[str]:
+    return sorted(dynamic_skipped_examples(report))
+
+
+def dynamic_skip_reason(example: ExampleResult) -> str:
+    for check in example.checks:
+        if check.name != DYNAMIC_ELIGIBILITY_CHECK or check.status != SKIP:
+            continue
+        inventory_status = inventory_status_from_check(check)
+        if inventory_status == "unvalidated":
+            return UNVALIDATED_REASON
+        if inventory_status == "ongoing":
+            return ONGOING_REASON
+    return ""
+
+
+def inventory_status_from_check(check: CheckResult) -> str:
+    for detail in check.details:
+        prefix = "inventory status:"
+        if detail.lower().startswith(prefix):
+            return detail[len(prefix):].strip().lower()
+    return ""
+
+
+def static_overall_result(report: CombinedReport) -> str:
+    if report.check_count_any(BLOCKING_STATUSES):
+        return ERROR
+    if report.check_count(WARNING):
+        return WARNING
+    return PASS
+
+
+def static_example_result(example: ExampleResult) -> str:
+    if example.count_any(BLOCKING_STATUSES):
+        return ERROR
+    if example.count(WARNING):
+        return WARNING
+    if example.count(SKIP):
+        return SKIP
+    return PASS
+
+
+def dynamic_example_result(example: ExampleResult) -> str:
+    if example.count_any(BLOCKING_STATUSES):
         return FAIL
     if example.count(SKIP):
         return SKIP
     return PASS
 
 
-def append_regression_summary(rendered: str, regression_json_path: Path) -> str:
+def append_regression_summary(
+    rendered: str,
+    regression_json_path: Path,
+    mode: str = MODE_DYNAMIC,
+    excluded_examples: Sequence[str] = (),
+) -> str:
     if not regression_json_path.is_file():
         return rendered
 
@@ -392,7 +572,61 @@ def append_regression_summary(rendered: str, regression_json_path: Path) -> str:
     comparisons = payload.get("comparisons", [])
     if not isinstance(comparisons, list):
         comparisons = []
+    excluded = set(excluded_examples)
+    comparisons = [
+        comparison
+        for comparison in comparisons
+        if not isinstance(comparison, dict)
+        or str(comparison.get("example") or "") not in excluded
+    ]
 
+    examples = regression_examples(comparisons)
+    if mode == MODE_STATIC:
+        summary = static_regression_summary(comparisons, examples)
+    else:
+        summary = dynamic_regression_summary(comparisons, examples)
+    summary.append("")
+    return rendered.rstrip() + "\n" + "\n".join(summary).rstrip() + "\n"
+
+
+def static_regression_summary(
+    comparisons: Sequence[object],
+    examples: Sequence[str],
+) -> List[str]:
+    summary = [
+        "",
+        "## Regression Summary",
+        "",
+        "### ERROR",
+        "",
+        "| Example | Current errors | Pre-existing errors | New errors | Fixed errors |",
+        "|---|---:|---:|---:|---:|",
+    ]
+    for example in examples:
+        summary.append(regression_error_summary_row(comparisons, example))
+    if not examples:
+        summary.append("| No regression comparisons were collected. | 0 | 0 | 0 | 0 |")
+
+    summary.extend(
+        [
+            "",
+            "### Warnings",
+            "",
+            "| Example | Current warnings | Pre-existing warnings | New warnings | Fixed warnings |",
+            "|---|---:|---:|---:|---:|",
+        ]
+    )
+    for example in examples:
+        summary.append(regression_warning_summary_row(comparisons, example))
+    if not examples:
+        summary.append("| No regression comparisons were collected. | 0 | 0 | 0 | 0 |")
+    return summary
+
+
+def dynamic_regression_summary(
+    comparisons: Sequence[object],
+    examples: Sequence[str],
+) -> List[str]:
     summary = [
         "",
         "## Regression Summary",
@@ -400,39 +634,80 @@ def append_regression_summary(rendered: str, regression_json_path: Path) -> str:
         "| Example | Current errors | Pre-existing errors | New errors | Fixed errors |",
         "|---|---:|---:|---:|---:|",
     ]
-    for example in regression_examples(comparisons):
-        summary.append(
-            "| `{}` | {} | {} | {} | {} |".format(
-                escape_table(example),
-                count_regression_field(
-                    comparisons,
-                    "head_issue_count",
-                    example=example,
-                ),
-                count_regression_field(
-                    comparisons,
-                    "pre_existing_issue_count",
-                    fallback_classification="Failed: Pre-existing failure",
-                    example=example,
-                ),
-                count_regression_field(
-                    comparisons,
-                    "new_issue_count",
-                    fallback_classification="Failed: PR regression",
-                    example=example,
-                ),
-                count_regression_field(
-                    comparisons,
-                    "fixed_issue_count",
-                    fallback_classification="Fixed: Pre-existing failure resolved",
-                    example=example,
-                ),
-            )
-        )
-    if len(summary) == 5:
+    for example in examples:
+        summary.append(regression_error_summary_row(comparisons, example))
+    if not examples:
         summary.append("| No regression comparisons were collected. | 0 | 0 | 0 | 0 |")
-    summary.append("")
-    return rendered.rstrip() + "\n" + "\n".join(summary).rstrip() + "\n"
+    return summary
+
+
+def regression_error_summary_row(
+    comparisons: Sequence[object],
+    example: str,
+) -> str:
+    current_errors = count_regression_field(
+        comparisons,
+        "head_issue_count",
+        example=example,
+    )
+    pre_existing_errors = count_regression_field(
+        comparisons,
+        "pre_existing_issue_count",
+        fallback_classification="Failed: Pre-existing failure",
+        example=example,
+    )
+    new_errors = count_regression_field(
+        comparisons,
+        "new_issue_count",
+        fallback_classification="Failed: PR regression",
+        example=example,
+    )
+    fixed_errors = count_regression_field(
+        comparisons,
+        "fixed_issue_count",
+        fallback_classification="Fixed: Pre-existing failure resolved",
+        example=example,
+    )
+    return "| `{}` | {} | {} | {} | {} |".format(
+        escape_table(example),
+        current_errors,
+        pre_existing_errors,
+        new_errors,
+        fixed_errors,
+    )
+
+
+def regression_warning_summary_row(
+    comparisons: Sequence[object],
+    example: str,
+) -> str:
+    current_warnings = count_regression_field(
+        comparisons,
+        "head_warning_count",
+        example=example,
+    )
+    pre_existing_warnings = count_regression_field(
+        comparisons,
+        "pre_existing_warning_count",
+        example=example,
+    )
+    new_warnings = count_regression_field(
+        comparisons,
+        "new_warning_count",
+        example=example,
+    )
+    fixed_warnings = count_regression_field(
+        comparisons,
+        "fixed_warning_count",
+        example=example,
+    )
+    return "| `{}` | {} | {} | {} | {} |".format(
+        escape_table(example),
+        current_warnings,
+        pre_existing_warnings,
+        new_warnings,
+        fixed_warnings,
+    )
 
 
 def append_collected_result_files(rendered: str, source_files: Sequence[str]) -> str:
@@ -492,17 +767,22 @@ def append_step_summary(rendered: str) -> None:
         summary.write("\n")
 
 
-def emit_annotations(report: CombinedReport) -> None:
+def emit_annotations(
+    report: CombinedReport,
+    mode: str = MODE_DYNAMIC,
+) -> None:
     for example in report.examples:
         for check in example.checks:
-            if check.status != FAIL:
+            is_warning = mode == MODE_STATIC and check.status == WARNING
+            if check.status not in BLOCKING_STATUSES and not is_warning:
                 continue
             file_name = check.file or infer_file_from_details(check.details) or example.path
             message = check.message or check.name
             title = "{}: {}".format(example.path, check.name)
+            command = "warning" if is_warning else "error"
             print(
                 "::{command} file={file},title={title}::{message}".format(
-                    command="error",
+                    command=command,
                     file=escape_command_property(file_name),
                     title=escape_command_property(title),
                     message=escape_command_value(message),

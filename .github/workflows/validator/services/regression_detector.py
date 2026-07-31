@@ -25,6 +25,8 @@ import argparse
 import glob
 import json
 import os
+import re
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -34,8 +36,12 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 
 PASS = "PASS"
+ERROR = "ERROR"
 FAIL = "FAIL"
+WARNING = "WARNING"
 SKIP = "SKIP"
+BLOCKING_STATUSES = {ERROR, FAIL}
+DYNAMIC_ELIGIBILITY_CHECK = "Dynamic validation eligibility"
 
 CLASS_PASSED = "Passed"
 CLASS_PR_REGRESSION = "Failed: PR regression"
@@ -49,6 +55,13 @@ MAX_COMMENT_BODY_CHARS = 60000
 GITHUB_PULL_REQUEST_EVENTS = ("pull_request", "pull_request_target")
 GITHUB_API_VERSION = "2022-11-28"
 GITHUB_USER_AGENT = "ianvs-example-validator"
+DETAIL_LOCATION_RE = re.compile(
+    r"^(?P<file>.+?)\s+->\s+\(Line\s+(?P<line>\d+)\):\s*(?P<message>.*)$"
+)
+DIFF_HUNK_RE = re.compile(
+    r"^@@ -(?P<old_start>\d+)(?:,(?P<old_count>\d+))? "
+    r"\+(?P<new_start>\d+)(?:,(?P<new_count>\d+))? @@"
+)
 
 
 @dataclass
@@ -66,7 +79,7 @@ class CheckResult:
 
     @property
     def issue_count(self) -> int:
-        if self.status != FAIL:
+        if self.status not in BLOCKING_STATUSES:
             return 0
         return len(self.details) if self.details else 1
 
@@ -76,6 +89,13 @@ class ErrorIssue:
     identity: Tuple[str, str, str, str]
     file: str = ""
     detail: str = ""
+
+
+@dataclass(frozen=True)
+class DetailLocation:
+    file: str
+    line: int
+    message: str
 
 
 @dataclass
@@ -90,15 +110,23 @@ class Comparison:
     issue_count: int = 0
     base_issue_count: int = 0
     head_issue_count: int = 0
+    base_warning_count: int = 0
+    head_warning_count: int = 0
     pre_existing_issue_count: int = 0
     new_issue_count: int = 0
     fixed_issue_count: int = 0
+    pre_existing_warning_count: int = 0
+    new_warning_count: int = 0
+    fixed_warning_count: int = 0
     message: str = ""
     file: str = ""
     details: List[str] = field(default_factory=list)
     pre_existing_details: List[str] = field(default_factory=list)
     new_details: List[str] = field(default_factory=list)
     fixed_details: List[str] = field(default_factory=list)
+    pre_existing_warning_details: List[str] = field(default_factory=list)
+    new_warning_details: List[str] = field(default_factory=list)
+    fixed_warning_details: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -121,6 +149,24 @@ class RegressionReport:
     @property
     def current_error_count(self) -> int:
         return sum(comparison.head_issue_count for comparison in self.comparisons)
+
+    @property
+    def current_warning_count(self) -> int:
+        return sum(comparison.head_warning_count for comparison in self.comparisons)
+
+    @property
+    def pre_existing_warning_count(self) -> int:
+        return sum(
+            comparison.pre_existing_warning_count for comparison in self.comparisons
+        )
+
+    @property
+    def new_warning_count(self) -> int:
+        return sum(comparison.new_warning_count for comparison in self.comparisons)
+
+    @property
+    def fixed_warning_count(self) -> int:
+        return sum(comparison.fixed_warning_count for comparison in self.comparisons)
 
     @property
     def pre_existing_error_count(self) -> int:
@@ -150,6 +196,16 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         action="append",
         default=[],
         help="Pull request JSON result file, directory, or glob. Can be repeated.",
+    )
+    parser.add_argument(
+        "--base-ref",
+        default="",
+        help="Git revision used for the base validation results.",
+    )
+    parser.add_argument(
+        "--head-ref",
+        default="",
+        help="Git revision used for the PR validation results.",
     )
     parser.add_argument(
         "--output",
@@ -206,7 +262,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print("No base validation result JSON files were found.", file=sys.stderr)
         return 2
 
-    report = compare_results(base_paths=base_paths, head_paths=head_paths)
+    report = compare_results(
+        base_paths=base_paths,
+        head_paths=head_paths,
+        base_ref=args.base_ref,
+        head_ref=args.head_ref,
+    )
     rendered = "" if args.json_only else render_markdown(report)
     publish_report(rendered, report, args)
 
@@ -250,16 +311,33 @@ def unique_paths(paths: Sequence[Path]) -> List[Path]:
     return unique_paths
 
 
-def compare_results(base_paths: Sequence[Path], head_paths: Sequence[Path]) -> RegressionReport:
+def compare_results(
+    base_paths: Sequence[Path],
+    head_paths: Sequence[Path],
+    base_ref: str = "",
+    head_ref: str = "",
+) -> RegressionReport:
     base_checks = load_checks(base_paths)
     head_checks = load_checks(head_paths)
     comparisons = []
+    line_mapper = GitLineMapper(base_ref, head_ref) if base_ref and head_ref else None
+    skipped_examples = dynamic_skipped_examples(base_checks) | dynamic_skipped_examples(
+        head_checks
+    )
 
-    identities = sorted(set(base_checks) | set(head_checks))
+    identities = sorted(
+        identity
+        for identity in set(base_checks) | set(head_checks)
+        if identity[0] not in skipped_examples
+    )
     for identity in identities:
         base_check = base_checks.get(identity)
         head_check = head_checks.get(identity)
-        comparison = compare_check(base_check=base_check, head_check=head_check)
+        comparison = compare_check(
+            base_check=base_check,
+            head_check=head_check,
+            line_mapper=line_mapper,
+        )
         if comparison:
             comparisons.append(comparison)
 
@@ -268,6 +346,16 @@ def compare_results(base_paths: Sequence[Path], head_paths: Sequence[Path]) -> R
         base_files=[path.as_posix() for path in base_paths],
         head_files=[path.as_posix() for path in head_paths],
     )
+
+
+def dynamic_skipped_examples(
+    checks: Dict[Tuple[str, str], CheckResult],
+) -> set:
+    return {
+        check.example
+        for check in checks.values()
+        if check.name == DYNAMIC_ELIGIBILITY_CHECK and check.status == SKIP
+    }
 
 
 def load_checks(paths: Sequence[Path]) -> Dict[Tuple[str, str], CheckResult]:
@@ -306,6 +394,7 @@ def string_list(value: object) -> List[str]:
 def compare_check(
     base_check: Optional[CheckResult],
     head_check: Optional[CheckResult],
+    line_mapper: Optional["GitLineMapper"] = None,
 ) -> Optional[Comparison]:
     if head_check is None and base_check is None:
         return None
@@ -316,14 +405,18 @@ def compare_check(
     head_status = head_check.status if head_check else "MISSING"
     base_issues = error_issue_map(base_check)
     head_issues = error_issue_map(head_check)
+    base_warnings = warning_issue_map(base_check)
+    head_warnings = warning_issue_map(head_check)
     base_issue_count = len(base_issues)
     head_issue_count = len(head_issues)
+    base_warning_count = len(base_warnings)
+    head_warning_count = len(head_warnings)
 
-    base_keys = set(base_issues)
-    head_keys = set(head_issues)
-    pre_existing_keys = sorted(base_keys & head_keys)
-    new_keys = sorted(head_keys - base_keys)
-    fixed_keys = sorted(base_keys - head_keys)
+    pre_existing_keys, new_keys, fixed_keys = compare_issue_keys(
+        base_issues,
+        head_issues,
+        line_mapper,
+    )
 
     pre_existing_details = issue_details(head_issues, pre_existing_keys)
     new_details = issue_details(head_issues, new_keys)
@@ -332,6 +425,28 @@ def compare_check(
     pre_existing_issue_count = len(pre_existing_keys)
     new_issue_count = len(new_keys)
     fixed_issue_count = len(fixed_keys)
+
+    (
+        pre_existing_warning_keys,
+        new_warning_keys,
+        fixed_warning_keys,
+    ) = compare_issue_keys(base_warnings, head_warnings, line_mapper)
+    pre_existing_warning_count = len(pre_existing_warning_keys)
+    new_warning_count = len(new_warning_keys)
+    fixed_warning_count = len(fixed_warning_keys)
+    pre_existing_warning_details = issue_details(
+        head_warnings,
+        pre_existing_warning_keys,
+    )
+    new_warning_details = issue_details(
+        head_warnings,
+        new_warning_keys,
+    )
+    fixed_warning_details = issue_details(
+        base_warnings,
+        fixed_warning_keys,
+    )
+    current_warning_details = pre_existing_warning_details + new_warning_details
 
     if new_issue_count > 0:
         classification = CLASS_PR_REGRESSION
@@ -345,6 +460,14 @@ def compare_check(
         classification = CLASS_FIXED_BASELINE
         issue_count = fixed_issue_count
         details = fixed_details
+    elif current_warning_details:
+        classification = CLASS_PASSED
+        issue_count = 0
+        details = current_warning_details
+    elif fixed_warning_details:
+        classification = CLASS_PASSED
+        issue_count = 0
+        details = fixed_warning_details
     elif base_issue_count == 0 and head_issue_count == 0:
         classification = CLASS_PASSED
         issue_count = 0
@@ -358,6 +481,12 @@ def compare_check(
     file_name = first_issue_file(head_issues, new_keys) or first_issue_file(head_issues, pre_existing_keys)
     if not file_name:
         file_name = first_issue_file(base_issues, fixed_keys)
+    if not file_name:
+        file_name = first_issue_file(head_warnings, new_warning_keys)
+    if not file_name:
+        file_name = first_issue_file(head_warnings, pre_existing_warning_keys)
+    if not file_name:
+        file_name = first_issue_file(base_warnings, fixed_warning_keys)
     if not file_name and representative_check:
         file_name = representative_check.file
 
@@ -372,20 +501,203 @@ def compare_check(
         issue_count=issue_count,
         base_issue_count=base_issue_count,
         head_issue_count=head_issue_count,
+        base_warning_count=base_warning_count,
+        head_warning_count=head_warning_count,
         pre_existing_issue_count=pre_existing_issue_count,
         new_issue_count=new_issue_count,
         fixed_issue_count=fixed_issue_count,
+        pre_existing_warning_count=pre_existing_warning_count,
+        new_warning_count=new_warning_count,
+        fixed_warning_count=fixed_warning_count,
         message=representative_check.message if representative_check else "",
         file=file_name,
         details=details,
         pre_existing_details=pre_existing_details,
         new_details=new_details,
         fixed_details=fixed_details,
+        pre_existing_warning_details=pre_existing_warning_details,
+        new_warning_details=new_warning_details,
+        fixed_warning_details=fixed_warning_details,
     )
 
 
+class GitLineMapper:
+    """Maps unchanged base-file lines to their locations at the PR revision."""
+
+    def __init__(self, base_ref: str, head_ref: str) -> None:
+        self.base_ref = base_ref
+        self.head_ref = head_ref
+        self.hunks_by_file: Dict[str, List[Tuple[int, int, int]]] = {}
+        self.available = git_revisions_exist(base_ref, head_ref)
+
+    def maps_to(self, base_detail: str, head_detail: str) -> bool:
+        if not self.available:
+            return False
+        base_location = parse_detail_location(base_detail)
+        head_location = parse_detail_location(head_detail)
+        if not base_location or not head_location:
+            return False
+        if (
+            base_location.file != head_location.file
+            or base_location.message != head_location.message
+        ):
+            return False
+        mapped_line = self.map_line(base_location.file, base_location.line)
+        return mapped_line == head_location.line
+
+    def map_line(self, file_path: str, base_line: int) -> Optional[int]:
+        offset = 0
+        for old_start, old_count, new_count in self.hunks(file_path):
+            if base_line < old_start:
+                return base_line + offset
+            if old_count and old_start <= base_line < old_start + old_count:
+                return None
+            offset += new_count - old_count
+        return base_line + offset
+
+    def hunks(self, file_path: str) -> List[Tuple[int, int, int]]:
+        if file_path not in self.hunks_by_file:
+            self.hunks_by_file[file_path] = git_diff_hunks(
+                self.base_ref,
+                self.head_ref,
+                file_path,
+            )
+        return self.hunks_by_file[file_path]
+
+
+def compare_issue_keys(
+    base_issues: Dict[Tuple[str, str, str, str], ErrorIssue],
+    head_issues: Dict[Tuple[str, str, str, str], ErrorIssue],
+    line_mapper: Optional[GitLineMapper],
+) -> Tuple[
+    List[Tuple[str, str, str, str]],
+    List[Tuple[str, str, str, str]],
+    List[Tuple[str, str, str, str]],
+]:
+    """Compare issue sets, treating unchanged Git-mapped lines as one issue."""
+    base_keys = set(base_issues)
+    head_keys = set(head_issues)
+    matched_base_keys = set(base_keys & head_keys)
+    matched_head_keys = set(matched_base_keys)
+    unmatched_base_keys = sorted(base_keys - matched_head_keys)
+    unmatched_head_keys = sorted(head_keys - matched_head_keys)
+
+    if line_mapper:
+        remaining_head_keys = set(unmatched_head_keys)
+        for base_key in unmatched_base_keys:
+            base_issue = base_issues[base_key]
+            matching_head_key = next(
+                (
+                    head_key
+                    for head_key in sorted(remaining_head_keys)
+                    if line_mapper.maps_to(base_issue.detail, head_issues[head_key].detail)
+                ),
+                None,
+            )
+            if matching_head_key is not None:
+                matched_base_keys.add(base_key)
+                matched_head_keys.add(matching_head_key)
+                remaining_head_keys.remove(matching_head_key)
+
+    pre_existing_keys = sorted(matched_head_keys)
+    new_keys = sorted(head_keys - matched_head_keys)
+    fixed_keys = sorted(base_keys - matched_base_keys)
+    return pre_existing_keys, new_keys, fixed_keys
+
+
+def parse_detail_location(detail: str) -> Optional[DetailLocation]:
+    match = DETAIL_LOCATION_RE.match(detail)
+    if not match:
+        return None
+    return DetailLocation(
+        file=match.group("file"),
+        line=int(match.group("line")),
+        message=match.group("message"),
+    )
+
+
+def git_revisions_exist(base_ref: str, head_ref: str) -> bool:
+    for revision in (base_ref, head_ref):
+        try:
+            result = subprocess.run(
+                ["git", "rev-parse", "--verify", "{}^{{commit}}".format(revision)],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except OSError:
+            return False
+        if result.returncode != 0:
+            return False
+    return True
+
+
+def git_diff_hunks(
+    base_ref: str,
+    head_ref: str,
+    file_path: str,
+) -> List[Tuple[int, int, int]]:
+    try:
+        result = subprocess.run(
+            [
+                "git",
+                "diff",
+                "--no-ext-diff",
+                "--unified=0",
+                base_ref,
+                head_ref,
+                "--",
+                file_path,
+            ],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+    except OSError:
+        return []
+    if result.returncode not in (0, 1):
+        return []
+    hunks = []
+    for line in result.stdout.splitlines():
+        match = DIFF_HUNK_RE.match(line)
+        if not match:
+            continue
+        hunks.append(
+            (
+                int(match.group("old_start")),
+                int(match.group("old_count") or 1),
+                int(match.group("new_count") or 1),
+            )
+        )
+    return hunks
+
+
 def error_issue_map(check: Optional[CheckResult]) -> Dict[Tuple[str, str, str, str], ErrorIssue]:
-    if not check or check.status != FAIL:
+    if not check or check.status not in BLOCKING_STATUSES:
+        return {}
+
+    if check.details:
+        return {
+            (check.example, check.name, check.file, detail): ErrorIssue(
+                identity=(check.example, check.name, check.file, detail),
+                file=check.file,
+                detail=detail,
+            )
+            for detail in check.details
+        }
+
+    if check.file:
+        identity = (check.example, check.name, check.file, "")
+        return {identity: ErrorIssue(identity=identity, file=check.file, detail=check.file)}
+
+    detail = check.message or check.name
+    identity = (check.example, check.name, "", detail)
+    return {identity: ErrorIssue(identity=identity, detail=detail)}
+
+
+def warning_issue_map(check: Optional[CheckResult]) -> Dict[Tuple[str, str, str, str], ErrorIssue]:
+    if not check or check.status != WARNING:
         return {}
 
     if check.details:
@@ -420,8 +732,13 @@ def first_issue_file(
 ) -> str:
     for key in keys:
         issue = issues.get(key)
-        if issue and issue.file:
+        if not issue:
+            continue
+        if issue.file:
             return issue.file
+        location = parse_detail_location(issue.detail)
+        if location:
+            return location.file
     return ""
 
 
@@ -559,6 +876,10 @@ def render_json(report: RegressionReport) -> str:
     payload = {
         "blocks_pr": report.blocks_pr,
         "current_error_count": report.current_error_count,
+        "current_warning_count": report.current_warning_count,
+        "pre_existing_warning_count": report.pre_existing_warning_count,
+        "new_warning_count": report.new_warning_count,
+        "fixed_warning_count": report.fixed_warning_count,
         "pre_existing_error_count": report.pre_existing_error_count,
         "new_error_count": report.new_error_count,
         "fixed_error_count": report.fixed_error_count,
@@ -576,15 +897,23 @@ def render_json(report: RegressionReport) -> str:
                 "issue_count": comparison.issue_count,
                 "base_issue_count": comparison.base_issue_count,
                 "head_issue_count": comparison.head_issue_count,
+                "base_warning_count": comparison.base_warning_count,
+                "head_warning_count": comparison.head_warning_count,
                 "pre_existing_issue_count": comparison.pre_existing_issue_count,
                 "new_issue_count": comparison.new_issue_count,
                 "fixed_issue_count": comparison.fixed_issue_count,
+                "pre_existing_warning_count": comparison.pre_existing_warning_count,
+                "new_warning_count": comparison.new_warning_count,
+                "fixed_warning_count": comparison.fixed_warning_count,
                 "message": comparison.message,
                 "file": comparison.file,
                 "details": comparison.details,
                 "pre_existing_details": comparison.pre_existing_details,
                 "new_details": comparison.new_details,
                 "fixed_details": comparison.fixed_details,
+                "pre_existing_warning_details": comparison.pre_existing_warning_details,
+                "new_warning_details": comparison.new_warning_details,
+                "fixed_warning_details": comparison.fixed_warning_details,
             }
             for comparison in report.comparisons
         ],
