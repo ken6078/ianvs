@@ -238,7 +238,13 @@ def _check_repo_path_references(
             if _looks_like_generated_dataset_path(repo_path):
                 continue
             if not (repo_root / repo_path).exists():
-                missing.append("{} -> {}".format(_repo_display_path(path), repo_path))
+                missing.append(
+                    _format_detected_value(
+                        path,
+                        _line_number_for_match(text, match, "path"),
+                        repo_path,
+                    )
+                )
 
     _append_issue_check(
         report,
@@ -349,8 +355,30 @@ def _collect_regex_matches(
         text = _read_text(path)
         for match in pattern.finditer(text):
             value = match.groupdict().get("path") or match.group(0)
-            matches.append("{} -> {}".format(_repo_display_path(path), value))
+            matches.append(
+                _format_detected_value(
+                    path,
+                    _line_number_for_match(text, match, "path"),
+                    value,
+                )
+            )
     return sorted(set(matches))
+
+
+def _format_detected_value(path: Path, line_number: int, value: str) -> str:
+    return "{} -> (Line {}): {}".format(_repo_display_path(path), line_number, value)
+
+
+def _line_number_for_match(text: str, match: re.Match, group_name: str = "") -> int:
+    start = -1
+    if group_name:
+        try:
+            start = match.start(group_name)
+        except IndexError:
+            start = -1
+    if start < 0:
+        start = match.start()
+    return text.count("\n", 0, start) + 1
 
 
 def _append_issue_check(
