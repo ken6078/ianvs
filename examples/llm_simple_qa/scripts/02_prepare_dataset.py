@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+"""Standard ordered preparation entry point for the Simple QA dataset."""
 
 import argparse
 import json
@@ -51,21 +52,9 @@ SAMPLE_ROWS = [
 
 
 def _write_jsonl(path: Path, rows):
-    with path.open("w", encoding="utf-8") as fout:
+    with path.open("w", encoding="utf-8") as output:
         for row in rows:
-            fout.write(json.dumps(row, ensure_ascii=False) + "\n")
-
-
-def _build_sample_rows(num_samples: int):
-    if num_samples < 0:
-        raise ValueError("num_samples must be greater than or equal to 0")
-    if num_samples == 0:
-        return []
-
-    full_repeats, remainder = divmod(num_samples, len(SAMPLE_ROWS))
-    rows = SAMPLE_ROWS * full_repeats
-    rows.extend(SAMPLE_ROWS[:remainder])
-    return rows
+            output.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
 def main():
@@ -74,9 +63,16 @@ def main():
     )
     parser.add_argument(
         "--dataset-root",
+        "--output-dir",
+        dest="dataset_root",
         type=Path,
         default=Path("./dataset/llm_simple_qa"),
         help="Destination dataset root. Defaults to ./dataset/llm_simple_qa.",
+    )
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Allow replacement of existing generated files.",
     )
     parser.add_argument(
         "--smoke",
@@ -84,8 +80,7 @@ def main():
         help="Generate a single test sample for smoke-test runs.",
     )
     args = parser.parse_args()
-    sample_count = 1 if args.smoke else len(SAMPLE_ROWS)
-    sample_rows = _build_sample_rows(sample_count)
+    rows = SAMPLE_ROWS[:1] if args.smoke else SAMPLE_ROWS
 
     train_dir = args.dataset_root / "train_data"
     test_dir = args.dataset_root / "test_data"
@@ -94,18 +89,21 @@ def main():
 
     train_path = train_dir / "data.jsonl"
     test_path = test_dir / "data.jsonl"
-
     train_path.write_text("", encoding="utf-8")
-    _write_jsonl(test_path, sample_rows)
+    _write_jsonl(test_path, rows)
 
-    summary = {
-        "dataset_root": str(args.dataset_root),
-        "train_data": str(train_path),
-        "test_data": str(test_path),
-        "test_size": len(sample_rows),
-        "smoke": args.smoke,
-    }
-    json.dump(summary, sys.stdout, ensure_ascii=False, indent=2)
+    json.dump(
+        {
+            "dataset_root": str(args.dataset_root),
+            "train_data": str(train_path),
+            "test_data": str(test_path),
+            "test_size": len(rows),
+            "smoke": args.smoke,
+        },
+        sys.stdout,
+        ensure_ascii=False,
+        indent=2,
+    )
     sys.stdout.write("\n")
 
 

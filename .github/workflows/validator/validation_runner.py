@@ -27,6 +27,9 @@ from dependency_validator import (
     INSTALL_MODE_SKIP,
 )
 from dependency_validator import validate_examples as validate_dependencies
+from environment_preparation_validator import (
+    validate_examples as prepare_example_environments,
+)
 from smoke_test_validator import (
     DEFAULT_TIMEOUT_SECONDS,
     validate_examples as validate_smoke_examples,
@@ -78,6 +81,11 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Run dependency declaration validation.",
     )
     parser.add_argument(
+        "--prepare-env",
+        action="store_true",
+        help="Run ordered inventory-defined environment preparation steps.",
+    )
+    parser.add_argument(
         "--format",
         choices=(REPORT_FORMAT_MARKDOWN, REPORT_FORMAT_JSON),
         default=REPORT_FORMAT_MARKDOWN,
@@ -127,7 +135,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     repo_root = Path.cwd()
     inventory_path = repo_root / args.inventory
 
-    static_mode = args.static or not (args.dependency or args.smoke or args.jsonl)
+    static_mode = args.static or not (
+        args.dependency or args.prepare_env or args.smoke or args.jsonl
+    )
     include_inactive = bool(args.example)
     examples = load_inventory_examples(inventory_path, active_only=not include_inactive)
     selected_examples = select_examples(examples, args.example, args.all)
@@ -155,6 +165,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 examples=dynamic_examples,
                 install_mode=dependency_install_mode(args),
                 timeout_seconds=args.timeout,
+            )
+        )
+    if args.prepare_env and dynamic_examples:
+        reports.append(
+            prepare_example_environments(
+                repo_root=repo_root,
+                examples=dynamic_examples,
             )
         )
     if args.jsonl and dynamic_examples:

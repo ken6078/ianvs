@@ -137,13 +137,17 @@ def validate_example(
     with tempfile.TemporaryDirectory(prefix="ianvs-smoke-") as temp_dir:
         dataset_config = _dataset_config_from_example(repo_root, example)
         temp_dataset_root = _temporary_dataset_root(temp_dir, dataset_config, example)
-        prepared_dataset_root = _prepare_dataset(
-            report,
-            repo_root,
-            example,
-            temp_dataset_root,
-            timeout_seconds,
-        )
+        prepared_dataset_root = None
+        if not isinstance(example.get("prepare_env"), Mapping):
+            # Backward compatibility for inventory entries that still use the
+            # legacy dataset.prepare_script contract.
+            prepared_dataset_root = _prepare_dataset(
+                report,
+                repo_root,
+                example,
+                temp_dataset_root,
+                timeout_seconds,
+            )
         dataset_files = _dataset_paths_from_config(
             repo_root,
             example,
@@ -161,6 +165,7 @@ def validate_example(
             _run_smoke_command(
                 report,
                 repo_root,
+                example,
                 command_benchmark_file,
                 prepared_dataset_root,
                 smoke_command,
@@ -439,6 +444,7 @@ def _validate_jsonl_file(
 def _run_smoke_command(
     report: ExampleReport,
     repo_root: Path,
+    example: Mapping[str, object],
     benchmark_file: str,
     prepared_dataset_root: Optional[Path],
     smoke_command: Sequence[str],
@@ -448,6 +454,17 @@ def _run_smoke_command(
     env = dict(os.environ)
     if prepared_dataset_root:
         env["IANVS_SMOKE_DATASET_ROOT"] = str(prepared_dataset_root)
+    mocked_llm, mock_error = _configure_mock_runtime(env, repo_root, example)
+    check_name = "Runtime smoke test (mocked_llm)" if mocked_llm else "Runtime smoke test"
+    if mock_error:
+        _append_check(
+            report,
+            name="Runtime smoke test (mocked_llm)",
+            status=FAIL,
+            file=benchmark_file,
+            message=mock_error,
+        )
+        return
 
     try:
         completed = subprocess.run(
@@ -463,7 +480,7 @@ def _run_smoke_command(
     except subprocess.TimeoutExpired:
         _append_check(
             report,
-            name="Runtime smoke test",
+            name=check_name,
             status=FAIL,
             file=benchmark_file,
             message="Smoke test timed out after {} seconds.".format(timeout_seconds),
@@ -472,11 +489,13 @@ def _run_smoke_command(
 
     _append_check(
         report,
-        name="Runtime smoke test",
+        name=check_name,
         status=PASS if completed.returncode == 0 else FAIL,
         file=benchmark_file,
         message=(
-            "Smoke test completed successfully."
+            "Smoke test completed successfully using substituted LLM responses."
+            if completed.returncode == 0 and mocked_llm
+            else "Smoke test completed successfully."
             if completed.returncode == 0
             else "Smoke test failed with exit code {}.".format(completed.returncode)
         ),
@@ -488,14 +507,46 @@ def _default_smoke_command(benchmark_file: str) -> List[str]:
     return [sys.executable, "benchmarking.py", "-f", benchmark_file]
 
 
+def _configure_mock_runtime(
+    env: Dict[str, str],
+    repo_root: Path,
+    example: Mapping[str, object],
+) -> tuple:
+    config = example.get("mock_runtime")
+    if not isinstance(config, Mapping) or config.get("enabled") is not True:
+        return False, ""
+
+    python_paths = []
+    for key in ("shared_pythonpath", "example_pythonpath"):
+        values = config.get(key)
+        if not isinstance(values, list) or not values:
+            return True, "mock_runtime.{} must be a non-empty array.".format(key)
+        for value in values:
+            if not isinstance(value, str) or not value.strip():
+                return True, "mock_runtime.{} must contain only strings.".format(key)
+            path = (repo_root / _normalize_repo_path(value)).resolve()
+            try:
+                path.relative_to(repo_root.resolve())
+            except ValueError:
+                return True, "Mock Runtime path escapes the repository: {}".format(value)
+            if not path.is_dir():
+                return True, "Mock Runtime path does not exist: {}".format(value)
+            python_paths.append(str(path))
+
+    existing_pythonpath = env.get("PYTHONPATH")
+    if existing_pythonpath:
+        python_paths.append(existing_pythonpath)
+    env["IANVS_LLM_MOCK"] = "1"
+    env["PYTHONPATH"] = os.pathsep.join(python_paths)
+    return True, ""
+
+
 def _materialize_smoke_benchmark(
     repo_root: Path,
     benchmark_file: str,
     prepared_dataset_root: Optional[Path],
     temp_dir: Path,
 ) -> str:
-    if not prepared_dataset_root:
-        return benchmark_file
     try:
         import yaml
     except ImportError:
@@ -515,10 +566,11 @@ def _materialize_smoke_benchmark(
         return benchmark_file
 
     testenv = yaml.safe_load(original_testenv_path.read_text(encoding="utf-8")) or {}
-    dataset_config = _dataset_config_from_testenv_payload(testenv)
-    dataset = testenv.get("testenv", {}).get("dataset", {})
-    if isinstance(dataset, dict):
-        _rewrite_dataset_paths(dataset, dataset_config, prepared_dataset_root)
+    if prepared_dataset_root:
+        dataset_config = _dataset_config_from_testenv_payload(testenv)
+        dataset = testenv.get("testenv", {}).get("dataset", {})
+        if isinstance(dataset, dict):
+            _rewrite_dataset_paths(dataset, dataset_config, prepared_dataset_root)
 
     smoke_testenv = temp_dir / "testenv.yaml"
     smoke_benchmark = temp_dir / "benchmarkingjob.yaml"

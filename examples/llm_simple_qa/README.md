@@ -4,13 +4,13 @@
 
 ### Prepare Data
 
-Run the dataset preparation script:
+From the repository root, run:
 
-`python examples/llm_simple_qa/scripts/prepare_dataset.py`
+`python examples/llm_simple_qa/scripts/02_prepare_dataset.py`
 
 For a smoke test, generate a single test row:
 
-`python examples/llm_simple_qa/scripts/prepare_dataset.py --smoke`
+`python examples/llm_simple_qa/scripts/02_prepare_dataset.py --smoke`
 
 The script creates the following structure by default:
 
@@ -38,7 +38,7 @@ Example output for the default run:
 
 Install the example dependencies first:
 
-`pip install -r examples/llm_simple_qa/requirements.txt`
+`cd examples/llm_simple_qa && scripts/01_install_requirements.sh requirements.txt`
 
 Install Sedna from the bundled wheel:
 

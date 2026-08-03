@@ -110,6 +110,8 @@ def validate_example(repo_root: Path, example: Mapping[str, object]) -> ExampleR
         _check_path_exists(report, "requirements file exists", repo_root, requirements_file)
     if prepare_script:
         _check_path_exists(report, "dataset prepare script exists", repo_root, prepare_script)
+    _check_prepare_env_contract(report, repo_root, example)
+    _check_mock_runtime_contract(report, repo_root, example)
 
     files = _example_files(root)
     _check_yaml_syntax(report, files)
@@ -120,6 +122,103 @@ def validate_example(repo_root: Path, example: Mapping[str, object]) -> ExampleR
     _check_metric_empty_pair_guard(report, repo_root, example_path)
 
     return report
+
+
+def _check_prepare_env_contract(
+    report: ExampleReport,
+    repo_root: Path,
+    example: Mapping[str, object],
+) -> None:
+    config = example.get("prepare_env")
+    if config is None:
+        return
+    issues = []
+    if not isinstance(config, Mapping):
+        issues.append("prepare_env must be an object")
+    else:
+        working_directory = config.get("working_directory")
+        steps = config.get("steps")
+        if not isinstance(working_directory, str) or not working_directory.strip():
+            issues.append("prepare_env.working_directory must be a non-empty string")
+        elif not (repo_root / _normalize_repo_path(working_directory)).is_dir():
+            issues.append("working directory is missing: {}".format(working_directory))
+        if not isinstance(steps, list) or not steps:
+            issues.append("prepare_env.steps must be a non-empty array")
+        else:
+            for index, step in enumerate(steps):
+                prefix = "prepare_env.steps[{}]".format(index)
+                if not isinstance(step, Mapping):
+                    issues.append("{} must be an object".format(prefix))
+                    continue
+                missing = [
+                    key
+                    for key in ("name", "type", "script", "args", "timeout")
+                    if key not in step
+                ]
+                if missing:
+                    issues.append("{} missing: {}".format(prefix, ", ".join(missing)))
+                    continue
+                args = step.get("args")
+                if not isinstance(args, list) or any(
+                    not isinstance(arg, str) for arg in args
+                ):
+                    issues.append("{}.args must be an array of strings".format(prefix))
+                timeout = step.get("timeout")
+                if (
+                    isinstance(timeout, bool)
+                    or not isinstance(timeout, int)
+                    or timeout <= 0
+                ):
+                    issues.append("{}.timeout must be a positive integer".format(prefix))
+                script = step.get("script")
+                if (
+                    isinstance(working_directory, str)
+                    and isinstance(script, str)
+                    and not (
+                        repo_root
+                        / _normalize_repo_path(working_directory)
+                        / _normalize_repo_path(script)
+                    ).is_file()
+                ):
+                    issues.append("{} script is missing: {}".format(prefix, script))
+    _append_issue_check(
+        report,
+        name="Environment preparation contract",
+        issues=issues,
+        fail_message="The prepare_env contract is invalid.",
+        pass_message="The prepare_env contract and scripts are valid.",
+    )
+
+
+def _check_mock_runtime_contract(
+    report: ExampleReport,
+    repo_root: Path,
+    example: Mapping[str, object],
+) -> None:
+    config = example.get("mock_runtime")
+    if config is None:
+        return
+    issues = []
+    if not isinstance(config, Mapping):
+        issues.append("mock_runtime must be an object")
+    elif config.get("enabled") is True:
+        for key in ("shared_pythonpath", "example_pythonpath"):
+            values = config.get(key)
+            if not isinstance(values, list) or not values:
+                issues.append("mock_runtime.{} must be a non-empty array".format(key))
+                continue
+            for value in values:
+                if not isinstance(value, str) or not value.strip():
+                    issues.append("mock_runtime.{} contains an invalid path".format(key))
+                elif not (repo_root / _normalize_repo_path(value)).is_dir():
+                    issues.append("mock runtime path is missing: {}".format(value))
+    _append_issue_check(
+        report,
+        name="Mock LLM runtime contract",
+        issues=issues,
+        fail_message="The Mock LLM runtime metadata is invalid.",
+        pass_message="The Mock LLM runtime paths are valid.",
+    )
 
 
 def render_markdown(report: StaticValidationReport) -> str:
