@@ -112,6 +112,7 @@ jobs:
             python "${GITHUB_WORKSPACE}/.github/workflows/validator/validation_runner.py" \
               --dependency \
               --pip-install \
+              --prepare-env \
               --smoke \
               --example "${{ matrix.changed_example }}" \
               --inventory "${GITHUB_WORKSPACE}/.github/workflows/validator/data/example_inventory.yaml" \
@@ -168,6 +169,7 @@ jobs:
           python .github/workflows/validator/validation_runner.py \
             --dependency \
             --pip-install \
+            --prepare-env \
             --smoke \
             --example "${{ matrix.changed_example }}" \
             --inventory .github/workflows/validator/data/example_inventory.yaml \
