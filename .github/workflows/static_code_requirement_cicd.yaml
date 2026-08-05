@@ -45,11 +45,19 @@ jobs:
       - name: Check changed examples
         id: check_examples
         run: |
+          extra_args=()
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            extra_args+=(
+              --base-ref "${{ github.event.pull_request.base.sha }}"
+              --head-ref HEAD
+            )
+          else
+            extra_args+=(--base-ref upstream/main --head-ref HEAD)
+          fi
           python .github/workflows/validator/services/inventory_loader.py \
-            --base-ref upstream/main \
-            --head-ref HEAD \
             --mode static \
-            --inventory .github/workflows/validator/data/example_inventory.yaml
+            --inventory .github/workflows/validator/data/example_inventory.yaml \
+            "${extra_args[@]}"
 
   static-code-requirement-base:
     needs: detect-change-examples
