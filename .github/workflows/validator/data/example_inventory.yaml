@@ -1,3 +1,4 @@
+# Demo-only metadata change used to trigger Tier 2 full validation.
 examples:
 - name: perception_reasoning_test
   example: "Cloud_Robotics"
