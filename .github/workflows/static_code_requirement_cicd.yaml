@@ -17,6 +17,7 @@ on:
 jobs:
   detect-change-examples:
     runs-on: ubuntu-latest
+    permissions: read-all
     outputs:
       mode: ${{ steps.check_examples.outputs.mode }}
       run_all: ${{ steps.check_examples.outputs.run_all }}
@@ -54,6 +55,7 @@ jobs:
     needs: detect-change-examples
     if: ${{ github.event_name == 'pull_request' && needs.detect-change-examples.outputs.examples_changed == 'true' }}
     runs-on: ubuntu-latest
+    permissions: read-all
     strategy:
       fail-fast: false
       matrix:
@@ -111,6 +113,7 @@ jobs:
     needs: detect-change-examples
     if: ${{ needs.detect-change-examples.outputs.examples_changed == 'true' }}
     runs-on: ubuntu-latest
+    permissions: read-all
     strategy:
       fail-fast: false
       matrix:
@@ -160,10 +163,7 @@ jobs:
       - static-code-requirement-pr
     if: ${{ always() && github.event_name == 'pull_request' && needs.detect-change-examples.outputs.examples_changed == 'true' }}
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      issues: write
-      pull-requests: read
+    permissions: read-all
     steps:
       - uses: actions/checkout@v7
         with:
@@ -220,10 +220,7 @@ jobs:
       - regression-static-code-requirement
     if: ${{ always() && needs.detect-change-examples.outputs.examples_changed == 'true' }}
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      issues: write
-      pull-requests: read
+    permissions: read-all
     steps:
       - uses: actions/checkout@v7
         with:
@@ -252,8 +249,6 @@ jobs:
           path: .
 
       - name: Generate validation report
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           extra_args=()
           if [ "${{ github.event_name }}" = "pull_request" ]; then
