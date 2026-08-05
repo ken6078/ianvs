@@ -57,7 +57,7 @@ from typing import Dict, List, Optional, Sequence
 
 DEFAULT_INVENTORY_PATH = ".github/workflows/validator/data/example_inventory.yaml"
 DYNAMIC_RUN_ALL_PREFIXES = ("core/", ".github/workflows/")
-STATIC_TRACKED_FILE_SUFFIXES = (".py", ".yaml")
+STATIC_TRACKED_FILE_SUFFIXES = (".py", ".yaml", ".yml")
 MODE_STATIC = "static"
 MODE_DYNAMIC = "dynamic"
 
