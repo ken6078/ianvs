@@ -59,6 +59,7 @@ class BaseModel:
         print("BaseModel doesn't need to save")
 
     def predict(self, data, input_shape=None, **kwargs):
+        raise RuntimeError("Demo: llm_simple_qa dynamic execution failure")
         print("BaseModel predict")
         answer_list = []
         for line in data:
