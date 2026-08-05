@@ -51,6 +51,11 @@ jobs:
           extra_args=()
           if [ "${{ github.event_name }}" = "schedule" ]; then
             extra_args+=(--schedule)
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            extra_args+=(
+              --base-ref "${{ github.event.pull_request.base.sha }}"
+              --head-ref HEAD
+            )
           else
             extra_args+=(--base-ref upstream/main --head-ref HEAD)
           fi
