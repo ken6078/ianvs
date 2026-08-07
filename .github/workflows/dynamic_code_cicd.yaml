@@ -76,7 +76,7 @@ jobs:
           } >> "${GITHUB_STEP_SUMMARY}"
 
   detect-change-examples:
-    if: ${{ github.event_name != 'schedule' }}
+    if: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     permissions: read-all
     outputs:
