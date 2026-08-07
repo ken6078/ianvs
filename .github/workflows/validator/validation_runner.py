@@ -308,17 +308,19 @@ def skip_dynamic_examples(
 
 
 def merge_reports(reports: Sequence[StaticValidationReport]) -> StaticValidationReport:
-    merged_by_path = {}
+    merged_by_benchmark = {}
     for report in reports:
         for example_report in report.reports:
-            key = example_report.path
-            if key not in merged_by_path:
-                merged_by_path[key] = example_report
+            key = (example_report.name, example_report.path)
+            if key not in merged_by_benchmark:
+                merged_by_benchmark[key] = example_report
                 continue
-            merged_by_path[key].checks.extend(example_report.checks)
+            merged_by_benchmark[key].checks.extend(example_report.checks)
 
     return StaticValidationReport(
-        reports=sorted(merged_by_path.values(), key=lambda item: (item.path, item.name))
+        reports=sorted(
+            merged_by_benchmark.values(), key=lambda item: (item.path, item.name)
+        )
     )
 
 

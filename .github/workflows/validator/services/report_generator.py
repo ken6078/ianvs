@@ -24,14 +24,25 @@ from __future__ import annotations
 
 import argparse
 import glob
+import html
 import json
 import os
 import sys
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
+from urllib.parse import quote
+
+try:
+    from inventory_loader import DEFAULT_INVENTORY_PATH, load_inventory_examples
+except ImportError:  # Support importing this file as services.report_generator.
+    from services.inventory_loader import (
+        DEFAULT_INVENTORY_PATH,
+        load_inventory_examples,
+    )
 
 
 PASS = "PASS"
@@ -51,6 +62,30 @@ DEFAULT_RESULT_PATTERNS = ("validation-results", "validator-results")
 GITHUB_PULL_REQUEST_EVENTS = ("pull_request", "pull_request_target")
 GITHUB_API_VERSION = "2022-11-28"
 GITHUB_USER_AGENT = "ianvs-example-validator"
+STATUS_RUNNABLE = "Runnable"
+STATUS_BROKEN = "Broken"
+STATUS_CICD_ONGOING = "CI/CD onGoing"
+STATUS_EXAMPLE_ONGOING = "Example onGoing"
+STATUS_EXTERNAL = "Requires external dataset or model download"
+STATUS_HARDWARE = "Requires GPU or special hardware"
+STATUS_QUARANTINED = "Quarantined"
+STATUS_KNOWN = "Known issue"
+REASON_DEPENDENCY = "Dependency drift"
+REASON_RESOURCE = "Dataset or resource unavailable"
+STATUS_COLORS = {
+    STATUS_RUNNABLE: "brightgreen",
+    STATUS_BROKEN: "red",
+    STATUS_CICD_ONGOING: "lightgrey",
+    STATUS_EXAMPLE_ONGOING: "yellow",
+    STATUS_EXTERNAL: "blue",
+    STATUS_HARDWARE: "orange",
+    STATUS_QUARANTINED: "8a2be2",
+    STATUS_KNOWN: "critical",
+}
+REASON_COLORS = {
+    REASON_DEPENDENCY: "ff69b4",
+    REASON_RESOURCE: "795548",
+}
 
 
 @dataclass
@@ -72,6 +107,10 @@ class ExampleResult:
     path: str
     passed: bool
     checks: List[CheckResult] = field(default_factory=list)
+
+    @property
+    def identity(self) -> Tuple[str, str]:
+        return self.name, self.path.rstrip("/")
 
     def count(self, status: str) -> int:
         return sum(check.issue_count for check in self.checks if check.status == status)
@@ -156,6 +195,21 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         action="store_true",
         help="Exit 0 even when collected validation results contain failures.",
     )
+    parser.add_argument(
+        "--example-health-readme",
+        default="",
+        help="Optional examples/README.md path to update from the collected results.",
+    )
+    parser.add_argument(
+        "--inventory",
+        default=DEFAULT_INVENTORY_PATH,
+        help="Inventory used when rendering the example health README.",
+    )
+    parser.add_argument(
+        "--health-metadata",
+        default="",
+        help="Optional JSON metadata containing T2/T3 source and validation time.",
+    )
     return parser.parse_args(argv)
 
 
@@ -173,6 +227,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         regression_json=args.regression_json,
     )
     publish_report(rendered, report, args, mode=args.mode)
+    if args.example_health_readme:
+        inventory_examples = load_inventory_examples(
+            Path(args.inventory), active_only=False
+        )
+        metadata = load_health_metadata(args.health_metadata)
+        health_readme = render_example_health_readme(
+            inventory_examples, report, metadata
+        )
+        write_text_file(health_readme, args.example_health_readme)
 
     if report.passed or args.no_fail:
         return 0
@@ -231,10 +294,10 @@ def load_combined_report(paths: Sequence[Path]) -> CombinedReport:
 
 
 def merge_duplicate_examples(examples: Sequence[ExampleResult]) -> List[ExampleResult]:
-    merged: Dict[str, ExampleResult] = {}
+    merged: Dict[Tuple[str, str], ExampleResult] = {}
 
     for example in examples:
-        key = example.path
+        key = example.identity
         if key not in merged:
             merged[key] = ExampleResult(
                 name=example.name,
@@ -378,6 +441,214 @@ def write_or_print_report(rendered: str, output: str) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(rendered, encoding="utf-8")
     print("Combined validation report written to {}".format(output_path))
+
+
+def write_text_file(rendered: str, output: str) -> None:
+    output_path = Path(output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(rendered, encoding="utf-8")
+    print("Example health report written to {}".format(output_path))
+
+
+def load_health_metadata(path: str) -> Dict[str, object]:
+    if not path:
+        return {}
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("Health metadata must be a JSON object")
+    return payload
+
+
+def parse_utc(value: str) -> datetime:
+    normalized = value.strip()
+    if normalized.endswith("Z"):
+        normalized = normalized[:-1] + "+00:00"
+    parsed = datetime.fromisoformat(normalized)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def render_example_health_readme(
+    inventory_examples: Sequence[dict],
+    report: CombinedReport,
+    metadata: Dict[str, object],
+) -> str:
+    results = {example.identity: example for example in report.examples}
+    lines = [
+        "# Ianvs Examples",
+        "",
+        (
+            "For status meanings, badge definitions, and broken-status subtypes, "
+            "see [`status_directions.md`](../docs/proposals/scenarios/"
+            "example-restoration/phase-3-2026-term-2/status_directions.md)."
+        ),
+        "",
+    ]
+    validated_at_value = str(metadata.get("validated_at", ""))
+    if validated_at_value:
+        validated_at = parse_utc(validated_at_value)
+        display_time = validated_at.strftime("%Y-%m-%d %H:%M UTC")
+        repository = str(metadata.get("repository", ""))
+        source_run_id = int(metadata.get("source_run_id", 0))
+        if repository and source_run_id:
+            run_url = "https://github.com/{}/actions/runs/{}".format(
+                repository, source_run_id
+            )
+            lines.append(
+                "**Last T2/T3 Validation Time:** [{}]({})".format(
+                    display_time, run_url
+                )
+            )
+        else:
+            lines.append(
+                "**Last T2/T3 Validation Time:** `{}`".format(display_time)
+            )
+        record = {
+            "schema_version": 1,
+            "source_run_id": source_run_id,
+            "source_sha": str(metadata.get("source_sha", "")),
+            "source_tier": str(metadata.get("source_tier", "")),
+            "validated_at": validated_at.isoformat().replace("+00:00", "Z"),
+        }
+        lines.append(
+            "<!-- ianvs-example-health-record {} -->".format(
+                json.dumps(record, sort_keys=True, separators=(",", ":"))
+            )
+        )
+    else:
+        lines.append("**Last T2/T3 Validation Time:** `Not available`")
+
+    lines.extend(
+        [
+            "",
+            "## Example Classification Matrix",
+            "",
+            "<table>",
+            "  <thead>",
+            "    <tr>",
+            "      <th>Example</th>",
+            "      <th>Benchmark Unit</th>",
+            "      <th>Path</th>",
+            "      <th>Status</th>",
+            "    </tr>",
+            "  </thead>",
+            "  <tbody>",
+        ]
+    )
+    grouped_examples: Dict[str, List[dict]] = {}
+    for inventory_example in inventory_examples:
+        example_name = str(
+            inventory_example.get("example")
+            or inventory_example.get("name")
+            or inventory_example.get("path", "")
+        )
+        grouped_examples.setdefault(example_name, []).append(inventory_example)
+
+    for example_name in sorted(grouped_examples):
+        benchmark_units = sorted(
+            grouped_examples[example_name],
+            key=lambda item: (
+                str(item.get("name", "")),
+                str(item.get("benchmark_file", "")),
+                str(item.get("path", "")),
+            ),
+        )
+        for index, inventory_example in enumerate(benchmark_units):
+            path = str(inventory_example.get("path", "")).rstrip("/")
+            benchmark_name = str(inventory_example.get("name") or path)
+            status, reason = classify_health_status(
+                inventory_example,
+                results.get((benchmark_name, path)),
+            )
+            lines.append("    <tr>")
+            if index == 0:
+                if len(benchmark_units) > 1:
+                    lines.append(
+                        '      <td rowspan="{}">{}</td>'.format(
+                            len(benchmark_units), html.escape(example_name)
+                        )
+                    )
+                else:
+                    lines.append(
+                        "      <td>{}</td>".format(html.escape(example_name))
+                    )
+            lines.extend(
+                [
+                    "      <td>{}</td>".format(html.escape(benchmark_name)),
+                    "      <td><code>{}</code></td>".format(html.escape(path)),
+                    "      <td>{}</td>".format(
+                        render_health_badges(status, reason)
+                    ),
+                    "    </tr>",
+                ]
+            )
+    lines.extend(["  </tbody>", "</table>"])
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def classify_health_status(
+    inventory_example: dict,
+    result: Optional[ExampleResult],
+) -> Tuple[str, str]:
+    inventory_status = str(inventory_example.get("status", "unvalidated")).lower()
+    manual_statuses = {
+        "quarantined": STATUS_QUARANTINED,
+        "known issue": STATUS_KNOWN,
+        "known_issue": STATUS_KNOWN,
+        "external": STATUS_EXTERNAL,
+        "requires_external_resource": STATUS_EXTERNAL,
+        "hardware": STATUS_HARDWARE,
+        "requires_hardware": STATUS_HARDWARE,
+        "broken": STATUS_BROKEN,
+    }
+    if inventory_status in manual_statuses:
+        return manual_statuses[inventory_status], ""
+    if inventory_status == "unvalidated":
+        return STATUS_CICD_ONGOING, ""
+    if inventory_status == "ongoing":
+        return STATUS_EXAMPLE_ONGOING, ""
+    if inventory_status != "active" or result is None:
+        return STATUS_CICD_ONGOING, ""
+
+    failed_checks = [
+        check for check in result.checks if check.status in BLOCKING_STATUSES
+    ]
+    if not failed_checks:
+        return STATUS_RUNNABLE, ""
+    failure_text = " ".join(
+        " ".join([check.name, check.message, check.file, " ".join(check.details)])
+        .lower()
+        for check in failed_checks
+    )
+    if any(
+        word in failure_text
+        for word in ("dependency", "requirements", "package", "pip")
+    ):
+        return STATUS_BROKEN, REASON_DEPENDENCY
+    if any(
+        word in failure_text
+        for word in ("dataset", "jsonl", "model", "resource", "download")
+    ):
+        return STATUS_BROKEN, REASON_RESOURCE
+    return STATUS_BROKEN, ""
+
+
+def render_health_badges(status: str, reason: str) -> str:
+    rendered = health_badge("status", status, STATUS_COLORS[status])
+    if reason:
+        rendered += " " + health_badge("reason", reason, REASON_COLORS[reason])
+    return rendered
+
+
+def health_badge(label: str, value: str, color: str) -> str:
+    image_url = "https://img.shields.io/badge/{}-{}-{}".format(
+        quote(label, safe=""), quote(value, safe=""), color
+    )
+    return '<img alt="{}" src="{}">'.format(
+        html.escape(value, quote=True),
+        html.escape(image_url, quote=True),
+    )
 
 
 def render_markdown(

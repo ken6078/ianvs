@@ -49,8 +49,12 @@ GitHub Actions outputs:
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
+import urllib.parse
+import urllib.request
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
@@ -60,6 +64,14 @@ DYNAMIC_RUN_ALL_PREFIXES = ("core/", ".github/workflows/")
 STATIC_TRACKED_FILE_SUFFIXES = (".py", ".yaml", ".yml")
 MODE_STATIC = "static"
 MODE_DYNAMIC = "dynamic"
+TIER2_HEALTH_ARTIFACT = "tier2-base-health-results"
+HEALTH_RECORD_RE = re.compile(
+    r"<!--\s*ianvs-example-health-record\s+(\{.*?\})\s*-->", re.DOTALL
+)
+SCHEDULE_ACTION_PUBLISH_TIER2 = "publish_tier2"
+SCHEDULE_ACTION_RUN_TIER3 = "run_tier3"
+SCHEDULE_ACTION_NONE = "none"
+DEFAULT_TIER3_CADENCE_DAYS = 7
 
 
 def git_lines(args: Sequence[str]) -> List[str]:
@@ -219,6 +231,178 @@ def select_scheduled_examples(mode: str, inventory_path: Path) -> dict:
     return inventory_selection_report(mode=mode, examples=examples, run_all=True)
 
 
+def parse_utc(value: str) -> datetime:
+    normalized = value.strip()
+    if normalized.endswith("Z"):
+        normalized = normalized[:-1] + "+00:00"
+    parsed = datetime.fromisoformat(normalized)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def format_utc(value: Optional[datetime]) -> str:
+    if value is None:
+        return ""
+    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def load_health_record(readme_path: Path) -> Optional[dict]:
+    if not readme_path.is_file():
+        return None
+    match = HEALTH_RECORD_RE.search(readme_path.read_text(encoding="utf-8"))
+    if not match:
+        return None
+    try:
+        payload = json.loads(match.group(1))
+        return {
+            "validated_at": parse_utc(str(payload["validated_at"])),
+            "source_run_id": int(payload.get("source_run_id", 0)),
+            "source_tier": str(payload.get("source_tier", "")),
+        }
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+        raise ValueError(
+            "Invalid example health record in {}: {}".format(readme_path, error)
+        )
+
+
+def github_json(url: str, token: str) -> dict:
+    request = urllib.request.Request(
+        url,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "Authorization": "Bearer {}".format(token),
+            "User-Agent": "ianvs-example-validator",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def load_tier2_health_artifacts(repository: str, token: str) -> List[dict]:
+    query = urllib.parse.urlencode(
+        {"name": TIER2_HEALTH_ARTIFACT, "per_page": "100"}
+    )
+    payload = github_json(
+        "https://api.github.com/repos/{}/actions/artifacts?{}".format(
+            repository, query
+        ),
+        token,
+    )
+    artifacts = payload.get("artifacts", [])
+    if not isinstance(artifacts, list):
+        raise ValueError("GitHub artifact response has no artifacts list")
+    return [artifact for artifact in artifacts if isinstance(artifact, dict)]
+
+
+def select_pending_tier2_artifact(
+    artifacts: Sequence[dict],
+    now: datetime,
+    health_record: Optional[dict],
+) -> Optional[dict]:
+    """Select the latest unpublished Tier 2 artifact completed before today.
+
+    Normally this is yesterday's Tier 2 result. Looking back to the README
+    timestamp also lets the next daily run recover when publication itself had
+    an infrastructure failure.
+    """
+
+    current = now.astimezone(timezone.utc)
+    today = current.replace(hour=0, minute=0, second=0, microsecond=0)
+    last_validated_at = health_record["validated_at"] if health_record else None
+    published_run_id = health_record["source_run_id"] if health_record else 0
+    candidates = []
+    for artifact in artifacts:
+        if artifact.get("expired"):
+            continue
+        try:
+            created_at = parse_utc(str(artifact["created_at"]))
+            artifact_id = int(artifact["id"])
+            run_id = int((artifact.get("workflow_run") or {})["id"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if created_at >= today or run_id == published_run_id:
+            continue
+        if last_validated_at and created_at <= last_validated_at:
+            continue
+        candidates.append(
+            {
+                "artifact_id": artifact_id,
+                "run_id": run_id,
+                "created_at": created_at,
+            }
+        )
+    if not candidates:
+        return None
+    return max(candidates, key=lambda artifact: artifact["created_at"])
+
+
+def scheduled_validation_plan(
+    now: datetime,
+    health_record: Optional[dict],
+    tier2_artifact: Optional[dict],
+    cadence_days: int = DEFAULT_TIER3_CADENCE_DAYS,
+) -> dict:
+    if tier2_artifact:
+        created_at = tier2_artifact["created_at"]
+        return {
+            "action": SCHEDULE_ACTION_PUBLISH_TIER2,
+            "reason": "An unpublished Tier 2 base result is available.",
+            "tier2_artifact_id": tier2_artifact["artifact_id"],
+            "tier2_run_id": tier2_artifact["run_id"],
+            "tier2_created_at": format_utc(created_at),
+            "last_validated_at": format_utc(
+                health_record["validated_at"] if health_record else None
+            ),
+            "next_tier3_at": format_utc(created_at + timedelta(days=cadence_days)),
+        }
+
+    if health_record is None:
+        return {
+            "action": SCHEDULE_ACTION_RUN_TIER3,
+            "reason": "The README has no T2/T3 validation record.",
+            "tier2_artifact_id": 0,
+            "tier2_run_id": 0,
+            "tier2_created_at": "",
+            "last_validated_at": "",
+            "next_tier3_at": "",
+        }
+
+    validated_at = health_record["validated_at"]
+    next_tier3_at = validated_at + timedelta(days=cadence_days)
+    due = now.astimezone(timezone.utc) >= next_tier3_at
+    return {
+        "action": SCHEDULE_ACTION_RUN_TIER3 if due else SCHEDULE_ACTION_NONE,
+        "reason": (
+            "The README validation record is at least {} days old.".format(
+                cadence_days
+            )
+            if due
+            else "No unpublished Tier 2 result exists and Tier 3 is not due."
+        ),
+        "tier2_artifact_id": 0,
+        "tier2_run_id": 0,
+        "tier2_created_at": "",
+        "last_validated_at": format_utc(validated_at),
+        "next_tier3_at": format_utc(next_tier3_at),
+    }
+
+
+def export_schedule_outputs(plan: dict, output_path: str) -> None:
+    with open(output_path, "a", encoding="utf-8") as output:
+        for key in (
+            "action",
+            "reason",
+            "tier2_artifact_id",
+            "tier2_run_id",
+            "tier2_created_at",
+            "last_validated_at",
+            "next_tier3_at",
+        ):
+            print("{}={}".format(key, plan.get(key, "")), file=output)
+
+
 def detect_changes(
     base_ref: str,
     head_ref: str,
@@ -327,6 +511,18 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Select active examples for scheduled dynamic validation.",
     )
     parser.add_argument(
+        "--plan-schedule",
+        action="store_true",
+        help="Choose whether today's scheduled run publishes T2, runs T3, or waits.",
+    )
+    parser.add_argument("--readme", default="examples/README.md")
+    parser.add_argument("--repository", default=os.environ.get("GITHUB_REPOSITORY", ""))
+    parser.add_argument("--token", default=os.environ.get("GITHUB_TOKEN", ""))
+    parser.add_argument(
+        "--cadence-days", type=int, default=DEFAULT_TIER3_CADENCE_DAYS
+    )
+    parser.add_argument("--now", default="", help="UTC ISO time override for tests.")
+    parser.add_argument(
         "--github-output",
         default=os.environ.get("GITHUB_OUTPUT", ""),
         help="GitHub Actions output file. Defaults to GITHUB_OUTPUT.",
@@ -337,6 +533,34 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_args(argv)
     inventory_path = Path(args.inventory)
+    if args.plan_schedule:
+        if args.cadence_days <= 0:
+            print("--cadence-days must be positive.", file=sys.stderr)
+            return 2
+        if not args.repository or not args.token:
+            print("--repository and --token are required for schedule planning.", file=sys.stderr)
+            return 2
+        now = parse_utc(args.now) if args.now else datetime.now(timezone.utc)
+        try:
+            health_record = load_health_record(Path(args.readme))
+            tier2_artifact = select_pending_tier2_artifact(
+                load_tier2_health_artifacts(args.repository, args.token),
+                now,
+                health_record,
+            )
+            plan = scheduled_validation_plan(
+                now, health_record, tier2_artifact, args.cadence_days
+            )
+        except (OSError, ValueError) as error:
+            print("Unable to plan scheduled validation: {}".format(error), file=sys.stderr)
+            return 1
+        print("Scheduled validation action: {}".format(plan["action"]))
+        print("Reason: {}".format(plan["reason"]))
+        if plan["next_tier3_at"]:
+            print("Next Tier 3 time: {}".format(plan["next_tier3_at"]))
+        if args.github_output:
+            export_schedule_outputs(plan, args.github_output)
+        return 0
     if args.schedule:
         if args.mode != MODE_DYNAMIC:
             print("--schedule is only supported with --mode dynamic.", file=sys.stderr)
