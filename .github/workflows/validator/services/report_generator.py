@@ -529,7 +529,6 @@ def render_example_health_readme(
             "    <tr>",
             "      <th>Example</th>",
             "      <th>Benchmark Unit</th>",
-            "      <th>Path</th>",
             "      <th>Status</th>",
             "    </tr>",
             "  </thead>",
@@ -557,6 +556,11 @@ def render_example_health_readme(
         for index, inventory_example in enumerate(benchmark_units):
             path = str(inventory_example.get("path", "")).rstrip("/")
             benchmark_name = str(inventory_example.get("name") or path)
+            readme_path = path[9:] if path.startswith("examples/") else path
+            benchmark_link = '<a href="./{}">{}</a>'.format(
+                quote(readme_path, safe="/"),
+                html.escape(benchmark_name),
+            )
             status, reason = classify_health_status(
                 inventory_example,
                 results.get((benchmark_name, path)),
@@ -575,8 +579,7 @@ def render_example_health_readme(
                     )
             lines.extend(
                 [
-                    "      <td>{}</td>".format(html.escape(benchmark_name)),
-                    "      <td><code>{}</code></td>".format(html.escape(path)),
+                    "      <td>{}</td>".format(benchmark_link),
                     "      <td>{}</td>".format(
                         render_health_badges(status, reason)
                     ),
