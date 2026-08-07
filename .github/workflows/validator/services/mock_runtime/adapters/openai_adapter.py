@@ -6,8 +6,129 @@ reach an OpenAI-compatible service while the mock runtime is enabled.
 """
 
 import json
+import os
+import re
 import threading
+import warnings
 from collections.abc import Mapping
+from functools import lru_cache
+from urllib.parse import urlsplit, urlunsplit
+from urllib.request import Request, urlopen
+
+
+_MODELS_DEV_URL = "https://models.dev/api.json"
+_MODELS_DEV_TIMEOUT_SECONDS = 5
+_OPENAI_COMPATIBLE_NPM = "@ai-sdk/openai-compatible"
+_ENDPOINT_PLACEHOLDER = re.compile(r"\$\{[^}]+\}")
+
+
+def _normalise_endpoint(endpoint):
+    """Return a stable representation for comparing API base URLs."""
+    parts = urlsplit(str(endpoint).strip())
+    return urlunsplit(
+        (parts.scheme.lower(), parts.netloc.lower(), parts.path.rstrip("/"), "", "")
+    )
+
+
+def _endpoint_pattern(endpoint):
+    """Compile a models.dev endpoint, including its ${ENV} placeholders."""
+    endpoint = _normalise_endpoint(endpoint)
+    chunks = _ENDPOINT_PLACEHOLDER.split(endpoint)
+    placeholders = _ENDPOINT_PLACEHOLDER.findall(endpoint)
+    pattern = "^" + re.escape(chunks[0])
+    for _placeholder, chunk in zip(placeholders, chunks[1:]):
+        pattern += r"[^/]+" + re.escape(chunk)
+    return re.compile(pattern + "$")
+
+
+@lru_cache(maxsize=1)
+def _models_dev_endpoints():
+    """Fetch and index models.dev data once for this Python process."""
+    try:
+        request = Request(_MODELS_DEV_URL, headers={"User-Agent": "ianvs-validator"})
+        with urlopen(request, timeout=_MODELS_DEV_TIMEOUT_SECONDS) as response:
+            providers = json.load(response)
+        if not isinstance(providers, Mapping):
+            raise ValueError("the response root is not an object")
+    except (OSError, TimeoutError, ValueError) as exc:
+        warnings.warn(
+            "Unable to validate the OpenAI endpoint and model because {} did not "
+            "respond with valid data: {}".format(_MODELS_DEV_URL, exc),
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return None
+
+    endpoint_models = {}
+    for provider in providers.values():
+        if not isinstance(provider, Mapping):
+            continue
+        provider_endpoint = provider.get("api")
+        provider_npm = provider.get("npm")
+        models = provider.get("models", {})
+        if not isinstance(models, Mapping):
+            continue
+
+        for model_key, model_data in models.items():
+            model_endpoint = None
+            model_npm = None
+            if isinstance(model_data, Mapping):
+                model_provider = model_data.get("provider")
+                if isinstance(model_provider, Mapping):
+                    model_endpoint = model_provider.get("api")
+                    model_npm = model_provider.get("npm")
+
+            if (model_npm or provider_npm) != _OPENAI_COMPATIBLE_NPM:
+                continue
+
+            endpoint = model_endpoint or provider_endpoint
+            if not isinstance(endpoint, str) or not endpoint.strip():
+                continue
+
+            model_ids = endpoint_models.setdefault(endpoint, set())
+            model_ids.add(str(model_key))
+            if isinstance(model_data, Mapping) and model_data.get("id") is not None:
+                model_ids.add(str(model_data["id"]))
+
+    return [
+        (_endpoint_pattern(endpoint), models)
+        for endpoint, models in endpoint_models.items()
+    ]
+
+
+def _validate_endpoint_model(endpoint, model):
+    endpoint_models = _models_dev_endpoints()
+    if endpoint_models is None:
+        return
+
+    normalised_endpoint = _normalise_endpoint(endpoint)
+    matched_models = set()
+    for pattern, models in endpoint_models:
+        if pattern.fullmatch(normalised_endpoint):
+            matched_models.update(models)
+
+    if not matched_models:
+        warnings.warn(
+            "OpenAI endpoint {!r} was not found in {}. Model {!r} could not be "
+            "validated.".format(str(endpoint), _MODELS_DEV_URL, model),
+            RuntimeWarning,
+            stacklevel=3,
+        )
+        return
+
+    if str(model) not in matched_models:
+        raise RuntimeError(
+            "Model {!r} is not available at OpenAI endpoint {!r} according to {}."
+            .format(model, str(endpoint), _MODELS_DEV_URL)
+        )
+
+
+def _configured_endpoint(base_url=None):
+    return base_url or os.environ.get("OPENAI_BASE_URL") or "https://api.openai.com/v1"
+
+
+def _resolve_endpoint(endpoint):
+    return endpoint() if callable(endpoint) else endpoint
 
 
 class _MockObject(dict):
@@ -215,12 +336,14 @@ class _AsyncStream:
 
 
 class _ChatCompletions:
-    def __init__(self, selector):
+    def __init__(self, selector, endpoint):
         self._selector = selector
+        self._endpoint = endpoint
 
     def create(self, *args, **kwargs):
         if args:
             raise TypeError("Mock chat completions accept keyword arguments only")
+        _validate_endpoint_model(_resolve_endpoint(self._endpoint), kwargs.get("model"))
         content = self._selector.next(kwargs)
         if kwargs.get("stream"):
             return _SyncStream(content, kwargs)
@@ -228,23 +351,27 @@ class _ChatCompletions:
 
 
 class _Completions:
-    def __init__(self, selector):
+    def __init__(self, selector, endpoint):
         self._selector = selector
+        self._endpoint = endpoint
 
     def create(self, *args, **kwargs):
         if args:
             raise TypeError("Mock completions accept keyword arguments only")
+        _validate_endpoint_model(_resolve_endpoint(self._endpoint), kwargs.get("model"))
         content = self._selector.next(kwargs)
         return _completion_response(content, kwargs)
 
 
 class _Responses:
-    def __init__(self, selector):
+    def __init__(self, selector, endpoint):
         self._selector = selector
+        self._endpoint = endpoint
 
     def create(self, *args, **kwargs):
         if args:
             raise TypeError("Mock responses accept keyword arguments only")
+        _validate_endpoint_model(_resolve_endpoint(self._endpoint), kwargs.get("model"))
         content = self._selector.next(kwargs)
         return _response_api_response(content, kwargs)
 
@@ -267,17 +394,23 @@ class _AsyncResponses(_Responses):
         return super().create(*args, **kwargs)
 
 
-def _client(selector, asynchronous=False):
+def _client(selector, endpoint, asynchronous=False):
     client = _MockObject()
     chat_completions = (
-        _AsyncChatCompletions(selector) if asynchronous else _ChatCompletions(selector)
+        _AsyncChatCompletions(selector, endpoint)
+        if asynchronous
+        else _ChatCompletions(selector, endpoint)
     )
     client.chat = _MockObject(completions=chat_completions)
     client.completions = (
-        _AsyncCompletions(selector) if asynchronous else _Completions(selector)
+        _AsyncCompletions(selector, endpoint)
+        if asynchronous
+        else _Completions(selector, endpoint)
     )
     client.responses = (
-        _AsyncResponses(selector) if asynchronous else _Responses(selector)
+        _AsyncResponses(selector, endpoint)
+        if asynchronous
+        else _Responses(selector, endpoint)
     )
     return client
 
@@ -293,21 +426,32 @@ def install(responses):
 
     class MockOpenAI:
         def __new__(cls, *_args, **_kwargs):
-            return _client(selector)
+            return _client(selector, _configured_endpoint(_kwargs.get("base_url")))
 
     class MockAsyncOpenAI:
         def __new__(cls, *_args, **_kwargs):
-            return _client(selector, asynchronous=True)
+            return _client(
+                selector,
+                _configured_endpoint(_kwargs.get("base_url")),
+                asynchronous=True,
+            )
+
+    def module_endpoint():
+        return _configured_endpoint(
+            getattr(openai, "base_url", None) or getattr(openai, "api_base", None)
+        )
 
     # Current SDK entry points.
     openai.OpenAI = MockOpenAI
     openai.Client = MockOpenAI
     openai.AsyncOpenAI = MockAsyncOpenAI
     openai.AsyncClient = MockAsyncOpenAI
-    openai.chat = _MockObject(completions=_ChatCompletions(selector))
-    openai.completions = _Completions(selector)
-    openai.responses = _Responses(selector)
+    openai.chat = _MockObject(
+        completions=_ChatCompletions(selector, module_endpoint)
+    )
+    openai.completions = _Completions(selector, module_endpoint)
+    openai.responses = _Responses(selector, module_endpoint)
 
     # Pre-1.0 SDK entry points, still used by some Ianvs examples.
-    openai.ChatCompletion = _ChatCompletions(selector)
-    openai.Completion = _Completions(selector)
+    openai.ChatCompletion = _ChatCompletions(selector, module_endpoint)
+    openai.Completion = _Completions(selector, module_endpoint)
