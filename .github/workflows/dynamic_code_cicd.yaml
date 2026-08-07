@@ -96,29 +96,14 @@ jobs:
         with:
           python-version: '3.8'
 
-      - name: Add upstream remote
-        run: |
-          git remote remove upstream || true
-          git remote add upstream https://github.com/kubeedge/ianvs.git
-          git fetch --no-tags --depth=1 upstream +refs/heads/main:refs/remotes/upstream/main
-          git rev-parse --verify refs/remotes/upstream/main
-
       - name: Check changed examples
         id: check_examples
         run: |
-          extra_args=()
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            extra_args+=(
-              --base-ref "${{ github.event.pull_request.base.sha }}"
-              --head-ref HEAD
-            )
-          else
-            extra_args+=(--base-ref upstream/main --head-ref HEAD)
-          fi
           python .github/workflows/validator/services/inventory_loader.py \
             --mode dynamic \
             --inventory .github/workflows/validator/data/example_inventory.yaml \
-            "${extra_args[@]}"
+            --base-ref "${{ github.event.pull_request.base.sha }}" \
+            --head-ref HEAD
 
   dynamic-code-requirement-base:
     needs: detect-change-examples
@@ -341,10 +326,6 @@ jobs:
 
       - name: Generate dynamic validation report
         run: |
-          extra_args=()
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            extra_args+=(--no-fail)
-          fi
           python .github/workflows/validator/services/report_generator.py \
             --results validation-results \
             --mode dynamic \
@@ -352,7 +333,7 @@ jobs:
             --regression-json regression-report.json \
             --step-summary \
             --allow-empty \
-            "${extra_args[@]}"
+            --no-fail
 
       - name: Upload dynamic validation report
         if: ${{ always() }}

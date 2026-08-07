@@ -1,12 +1,6 @@
 name: "Static Code Requirement Verification"
 
 on:
-  push:
-    branches: [ main ]
-    paths:
-      - 'examples/**/*.py'
-      - 'examples/**/*.yml'
-      - 'examples/**/*.yaml'
   pull_request:
     branches: [ main ]
     paths:
@@ -16,6 +10,7 @@ on:
 
 jobs:
   detect-change-examples:
+    if: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     permissions: read-all
     outputs:
@@ -35,29 +30,14 @@ jobs:
         with:
           python-version: '3.8'
 
-      - name: Add upstream remote
-        run: |
-          git remote remove upstream || true
-          git remote add upstream https://github.com/kubeedge/ianvs.git
-          git fetch --no-tags --depth=1 upstream +refs/heads/main:refs/remotes/upstream/main
-          git rev-parse --verify refs/remotes/upstream/main
-
       - name: Check changed examples
         id: check_examples
         run: |
-          extra_args=()
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            extra_args+=(
-              --base-ref "${{ github.event.pull_request.base.sha }}"
-              --head-ref HEAD
-            )
-          else
-            extra_args+=(--base-ref upstream/main --head-ref HEAD)
-          fi
           python .github/workflows/validator/services/inventory_loader.py \
             --mode static \
             --inventory .github/workflows/validator/data/example_inventory.yaml \
-            "${extra_args[@]}"
+            --base-ref "${{ github.event.pull_request.base.sha }}" \
+            --head-ref HEAD
 
   static-code-requirement-base:
     needs: detect-change-examples
@@ -167,6 +147,7 @@ jobs:
 
   regression-static-code-requirement:
     needs:
+      - detect-change-examples
       - static-code-requirement-base
       - static-code-requirement-pr
     if: ${{ always() && github.event_name == 'pull_request' && needs.detect-change-examples.outputs.examples_changed == 'true' }}
@@ -225,7 +206,9 @@ jobs:
 
   report-static-code-requirement:
     needs:
+      - detect-change-examples
       - regression-static-code-requirement
+      - static-code-requirement-pr
     if: ${{ always() && needs.detect-change-examples.outputs.examples_changed == 'true' }}
     runs-on: ubuntu-latest
     permissions: read-all
@@ -258,17 +241,13 @@ jobs:
 
       - name: Generate validation report
         run: |
-          extra_args=()
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            extra_args+=(--no-fail)
-          fi
           python .github/workflows/validator/services/report_generator.py \
             --results validation-results \
             --mode static \
             --output validation-report.md \
             --regression-json regression-report.json \
             --step-summary \
-            "${extra_args[@]}"
+            --no-fail
 
       - name: Upload validation report
         if: ${{ always() }}

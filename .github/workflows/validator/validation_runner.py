@@ -133,28 +133,44 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_args(argv)
     repo_root = Path.cwd()
-    inventory_path = repo_root / args.inventory
-
-    static_mode = args.static or not (
-        args.dependency or args.prepare_env or args.smoke or args.jsonl
-    )
-    include_inactive = bool(args.example)
-    examples = load_inventory_examples(inventory_path, active_only=not include_inactive)
-    selected_examples = select_examples(examples, args.example, args.all)
+    selected_examples = load_selected_examples(repo_root, args)
 
     if not selected_examples:
         print("No inventory examples matched the requested selection.", file=sys.stderr)
         return 1
 
-    reports = []
+    report = run_validation_pipeline(repo_root, selected_examples, args)
+    rendered = render_report(report, args.format)
+    write_or_print_report(rendered, args.report)
+    return 0 if report.passed else 1
+
+
+def load_selected_examples(
+    repo_root: Path,
+    args: argparse.Namespace,
+) -> List[Mapping[str, object]]:
+    inventory_path = repo_root / args.inventory
+    examples = load_inventory_examples(
+        inventory_path,
+        active_only=not bool(args.example),
+    )
+    return select_examples(examples, args.example, args.all)
+
+
+def run_validation_pipeline(
+    repo_root: Path,
+    selected_examples: Sequence[Mapping[str, object]],
+    args: argparse.Namespace,
+) -> StaticValidationReport:
+    reports: List[StaticValidationReport] = []
     dynamic_examples = selected_examples
-    if not static_mode:
+    if not runs_static_validation(args):
         dynamic_examples = active_examples(selected_examples)
         skipped_examples = inactive_examples(selected_examples)
         if skipped_examples:
             reports.append(skip_dynamic_examples(skipped_examples))
 
-    if static_mode:
+    if runs_static_validation(args):
         reports.append(
             validate_static_examples(repo_root=repo_root, examples=selected_examples)
         )
@@ -192,10 +208,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             )
         )
 
-    report = merge_reports(reports)
-    rendered = render_report(report, args.format)
-    write_or_print_report(rendered, args.report)
-    return 0 if report.passed else 1
+    return merge_reports(reports)
+
+
+def runs_dynamic_validation(args: argparse.Namespace) -> bool:
+    return any((args.dependency, args.prepare_env, args.smoke, args.jsonl))
+
+
+def runs_static_validation(args: argparse.Namespace) -> bool:
+    return args.static or not runs_dynamic_validation(args)
 
 
 def select_examples(
