@@ -108,13 +108,10 @@ def _validate_endpoint_model(endpoint, model):
             matched_models.update(models)
 
     if not matched_models:
-        warnings.warn(
+        raise RuntimeError(
             "OpenAI endpoint {!r} was not found in {}. Model {!r} could not be "
             "validated.".format(str(endpoint), _MODELS_DEV_URL, model),
-            RuntimeWarning,
-            stacklevel=3,
         )
-        return
 
     if str(model) not in matched_models:
         raise RuntimeError(
