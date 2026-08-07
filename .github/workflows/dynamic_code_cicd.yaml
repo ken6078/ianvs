@@ -1,0 +1,686 @@
+name: "Dynamic Code Requirement Verification"
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'examples/**'
+      - 'core/**'
+      - '.github/workflows/validator/**'
+      - '.github/workflows/dynamic_code_cicd.yaml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'examples/**'
+      - 'core/**'
+      - '.github/workflows/validator/**'
+      - '.github/workflows/dynamic_code_cicd.yaml'
+  schedule:
+    - cron: '31 15 * * *'
+
+jobs:
+  plan-scheduled-validation:
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      action: ${{ steps.plan.outputs.action }}
+      reason: ${{ steps.plan.outputs.reason }}
+      tier2_artifact_id: ${{ steps.plan.outputs.tier2_artifact_id }}
+      tier2_run_id: ${{ steps.plan.outputs.tier2_run_id }}
+      tier2_created_at: ${{ steps.plan.outputs.tier2_created_at }}
+      last_validated_at: ${{ steps.plan.outputs.last_validated_at }}
+      next_tier3_at: ${{ steps.plan.outputs.next_tier3_at }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.8'
+
+      - name: Plan Tier 3 validation
+        id: plan
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            {
+              echo "action=run_tier3"
+              echo "reason=Tier 3 runs after pushes to main."
+              echo "tier2_artifact_id="
+              echo "tier2_run_id="
+              echo "tier2_created_at="
+              echo "last_validated_at="
+              echo "next_tier3_at="
+            } >> "${GITHUB_OUTPUT}"
+          else
+            python .github/workflows/validator/services/inventory_loader.py \
+              --plan-schedule \
+              --readme examples/README.md \
+              --repository "${{ github.repository }}" \
+              --cadence-days 7
+          fi
+
+      - name: Write validation decision summary
+        run: |
+          {
+            echo "## Tier 3 validation decision"
+            echo
+            echo "- Action: \`${{ steps.plan.outputs.action }}\`"
+            echo "- Reason: ${{ steps.plan.outputs.reason }}"
+            echo "- Last validation: \`${{ steps.plan.outputs.last_validated_at || 'Not available' }}\`"
+            echo "- Next Tier 3: \`${{ steps.plan.outputs.next_tier3_at || 'Due now' }}\`"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  detect-change-examples:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    permissions: read-all
+    outputs:
+      mode: ${{ steps.check_examples.outputs.mode }}
+      run_all: ${{ steps.check_examples.outputs.run_all }}
+      examples_changed: ${{ steps.check_examples.outputs.examples_changed }}
+      changed_examples: ${{ steps.check_examples.outputs.changed_examples }}
+      changed_files: ${{ steps.check_examples.outputs.changed_files }}
+      check_items: ${{ steps.check_examples.outputs.check_items }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.8'
+
+      - name: Add upstream remote
+        run: |
+          git remote remove upstream || true
+          git remote add upstream https://github.com/kubeedge/ianvs.git
+          git fetch --no-tags --depth=1 upstream +refs/heads/main:refs/remotes/upstream/main
+          git rev-parse --verify refs/remotes/upstream/main
+
+      - name: Check changed examples
+        id: check_examples
+        run: |
+          extra_args=()
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            extra_args+=(
+              --base-ref "${{ github.event.pull_request.base.sha }}"
+              --head-ref HEAD
+            )
+          else
+            extra_args+=(--base-ref upstream/main --head-ref HEAD)
+          fi
+          python .github/workflows/validator/services/inventory_loader.py \
+            --mode dynamic \
+            --inventory .github/workflows/validator/data/example_inventory.yaml \
+            "${extra_args[@]}"
+
+  dynamic-code-requirement-base:
+    needs: detect-change-examples
+    if: ${{ github.event_name == 'pull_request' && needs.detect-change-examples.outputs.examples_changed == 'true' }}
+    runs-on: ubuntu-latest
+    permissions: read-all
+    strategy:
+      fail-fast: false
+      matrix:
+        changed_example: ${{ fromJson(needs.detect-change-examples.outputs.changed_examples) }}
+    name: ${{ format('Base dynamic example validation ({0})', matrix.changed_example) }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.8'
+
+      - name: Install validator dependencies
+        run: python -m pip install -r .github/workflows/validator/requirements.txt
+
+      - name: Prepare base validation worktree
+        run: |
+          base_dir="$(mktemp -d)"
+          git fetch --no-tags --depth=1 origin "${{ github.event.pull_request.base.sha }}"
+          git worktree add --detach "${base_dir}" FETCH_HEAD
+          echo "IANVS_BASE_DIR=${base_dir}" >> "${GITHUB_ENV}"
+
+      - name: Install base Ianvs runtime dependencies
+        run: |
+          (
+            cd "${IANVS_BASE_DIR}"
+            python -m pip install -r requirements.txt
+            python -m pip install resources/third_party/sedna-0.6.0.1-py3-none-any.whl
+            python -m pip install -e . --no-deps
+          )
+
+      - name: Run base dynamic example validation
+        id: run_validation
+        continue-on-error: true
+        run: |
+          safe_name="$(printf '%s' "${{ matrix.changed_example }}" | tr -c 'A-Za-z0-9._-' '-')"
+          result_file="${GITHUB_WORKSPACE}/baseline-results/${safe_name}.json"
+          mkdir -p "${GITHUB_WORKSPACE}/baseline-results"
+          echo "artifact_name=dynamic-validation-base-${safe_name}" >> "${GITHUB_OUTPUT}"
+          echo "result_file=${result_file}" >> "${GITHUB_OUTPUT}"
+
+          (
+            cd "${IANVS_BASE_DIR}"
+            python "${GITHUB_WORKSPACE}/.github/workflows/validator/validation_runner.py" \
+              --dependency \
+              --pip-install \
+              --prepare-env \
+              --smoke \
+              --example "${{ matrix.changed_example }}" \
+              --inventory "${GITHUB_WORKSPACE}/.github/workflows/validator/data/example_inventory.yaml" \
+              --format json \
+              --report "${result_file}"
+          )
+
+      - name: Upload base dynamic validation result
+        if: ${{ always() && steps.run_validation.outputs.result_file != '' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.run_validation.outputs.artifact_name }}
+          path: ${{ steps.run_validation.outputs.result_file }}
+          if-no-files-found: ignore
+
+  dynamic-code-requirement-pr:
+    needs: detect-change-examples
+    if: ${{ github.event_name != 'schedule' && needs.detect-change-examples.outputs.examples_changed == 'true' }}
+    runs-on: ubuntu-latest
+    permissions: read-all
+    strategy:
+      fail-fast: false
+      matrix:
+        changed_example: ${{ fromJson(needs.detect-change-examples.outputs.changed_examples) }}
+    name: ${{ format('PR dynamic example validation ({0})', matrix.changed_example) }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.8'
+
+      - name: Install validator dependencies
+        run: python -m pip install -r .github/workflows/validator/requirements.txt
+
+      - name: Install Ianvs runtime dependencies
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install resources/third_party/sedna-0.6.0.1-py3-none-any.whl
+          python -m pip install -e . --no-deps
+
+      - name: Run PR dynamic example validation
+        id: run_validation
+        continue-on-error: true
+        run: |
+          safe_name="$(printf '%s' "${{ matrix.changed_example }}" | tr -c 'A-Za-z0-9._-' '-')"
+          result_file="validation-results/${safe_name}.json"
+          mkdir -p validation-results
+          echo "artifact_name=dynamic-validation-pr-${safe_name}" >> "${GITHUB_OUTPUT}"
+          echo "result_file=${result_file}" >> "${GITHUB_OUTPUT}"
+
+          python .github/workflows/validator/validation_runner.py \
+            --dependency \
+            --pip-install \
+            --prepare-env \
+            --smoke \
+            --example "${{ matrix.changed_example }}" \
+            --inventory .github/workflows/validator/data/example_inventory.yaml \
+            --format json \
+            --report "${result_file}"
+
+      - name: Upload PR dynamic validation result
+        if: ${{ always() && steps.run_validation.outputs.result_file != '' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.run_validation.outputs.artifact_name }}
+          path: ${{ steps.run_validation.outputs.result_file }}
+          if-no-files-found: ignore
+
+  regression-dynamic-code-requirement:
+    needs:
+      - detect-change-examples
+      - dynamic-code-requirement-base
+      - dynamic-code-requirement-pr
+    if: ${{ always() && github.event_name == 'pull_request' && needs.detect-change-examples.outputs.examples_changed == 'true' }}
+    runs-on: ubuntu-latest
+    permissions: read-all
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.8'
+
+      - name: Install validator dependencies
+        run: python -m pip install -r .github/workflows/validator/requirements.txt
+
+      - name: Download base dynamic validation results
+        uses: actions/download-artifact@v8
+        with:
+          pattern: dynamic-validation-base-*
+          path: baseline-results
+          merge-multiple: true
+
+      - name: Download PR dynamic validation results
+        uses: actions/download-artifact@v8
+        with:
+          pattern: dynamic-validation-pr-*
+          path: validation-results
+          merge-multiple: true
+
+      - name: Detect PR regressions
+        id: detect_regression
+        continue-on-error: true
+        run: |
+          python .github/workflows/validator/services/regression_detector.py \
+            --base-results baseline-results \
+            --head-results validation-results \
+            --json-output regression-report.json \
+            --json-only
+
+      - name: Upload regression report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: dynamic-validation-regression-report
+          path: regression-report.json
+          if-no-files-found: ignore
+
+      - name: Fail on PR regression
+        if: ${{ steps.detect_regression.outcome == 'failure' }}
+        run: exit 1
+
+  report-dynamic-code-requirement:
+    needs:
+      - detect-change-examples
+      - regression-dynamic-code-requirement
+      - dynamic-code-requirement-pr
+    if: ${{ always() && needs.detect-change-examples.outputs.examples_changed == 'true' }}
+    runs-on: ubuntu-latest
+    permissions: read-all
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.8'
+
+      - name: Install validator dependencies
+        run: python -m pip install -r .github/workflows/validator/requirements.txt
+
+      - name: Download dynamic validation results
+        uses: actions/download-artifact@v8
+        with:
+          pattern: dynamic-validation-pr-*
+          path: validation-results
+          merge-multiple: true
+
+      - name: Download regression report
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: actions/download-artifact@v8
+        with:
+          name: dynamic-validation-regression-report
+          path: .
+
+      - name: Generate dynamic validation report
+        run: |
+          extra_args=()
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            extra_args+=(--no-fail)
+          fi
+          python .github/workflows/validator/services/report_generator.py \
+            --results validation-results \
+            --mode dynamic \
+            --output dynamic-validation-report.md \
+            --regression-json regression-report.json \
+            --step-summary \
+            --allow-empty \
+            "${extra_args[@]}"
+
+      - name: Upload dynamic validation report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: dynamic-validation-report
+          path: |
+            dynamic-validation-report.md
+            regression-report.json
+          if-no-files-found: ignore
+
+  collect-tier2-base-health-results:
+    needs:
+      - detect-change-examples
+      - dynamic-code-requirement-base
+    if: ${{ always() && github.event_name == 'pull_request' && needs.detect-change-examples.outputs.run_all == 'true' && needs.detect-change-examples.outputs.examples_changed == 'true' }}
+    runs-on: ubuntu-latest
+    permissions: read-all
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download Tier 2 base validation results
+        uses: actions/download-artifact@v8
+        with:
+          pattern: dynamic-validation-base-*
+          path: baseline-results
+          merge-multiple: true
+
+      - name: Verify full Tier 2 base result set
+        env:
+          EXPECTED_EXAMPLES: ${{ needs.detect-change-examples.outputs.changed_examples }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          expected = len(json.loads(os.environ["EXPECTED_EXAMPLES"]))
+          actual = len(list(Path("baseline-results").glob("*.json")))
+          if actual != expected:
+              raise SystemExit(
+                  "Tier 2 base results are incomplete: expected {}, found {}".format(
+                      expected, actual
+                  )
+              )
+          PY
+
+      - name: Record Tier 2 base metadata
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          REPOSITORY: ${{ github.repository }}
+          SOURCE_RUN_ID: ${{ github.run_id }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          metadata = {
+              "repository": os.environ["REPOSITORY"],
+              "source_run_id": int(os.environ["SOURCE_RUN_ID"]),
+              "source_sha": os.environ["BASE_SHA"],
+              "source_tier": "T2",
+              "validated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+          }
+          Path("tier2-metadata.json").write_text(
+              json.dumps(metadata, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Upload Tier 2 base health results
+        uses: actions/upload-artifact@v7
+        with:
+          name: tier2-base-health-results
+          path: |
+            baseline-results/
+            tier2-metadata.json
+          retention-days: 30
+          overwrite: true
+
+  publish-tier2-example-health:
+    needs: plan-scheduled-validation
+    if: ${{ needs.plan-scheduled-validation.outputs.action == 'publish_tier2' }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+    concurrency:
+      group: example-health-main
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.8'
+
+      - name: Install validator dependencies
+        run: python -m pip install -r .github/workflows/validator/requirements.txt
+
+      - name: Download yesterday's Tier 2 base results
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download "${{ needs.plan-scheduled-validation.outputs.tier2_run_id }}" \
+            --name tier2-base-health-results \
+            --dir tier2-health
+
+      - name: Render example health README from Tier 2 base
+        run: |
+          python .github/workflows/validator/services/report_generator.py \
+            --results tier2-health/baseline-results \
+            --mode dynamic \
+            --output tier2-health-report.md \
+            --inventory .github/workflows/validator/data/example_inventory.yaml \
+            --health-metadata tier2-health/tier2-metadata.json \
+            --example-health-readme examples/README.md \
+            --no-fail
+
+      - name: Commit example health README to main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add examples/README.md
+          if git diff --cached --quiet; then
+            echo "The Tier 2 health README is already current."
+            exit 0
+          fi
+          git commit -m "docs: update example health from Tier 2"
+          git push origin HEAD:main
+
+  select-tier3-examples:
+    needs: plan-scheduled-validation
+    if: ${{ needs.plan-scheduled-validation.outputs.action == 'run_tier3' }}
+    runs-on: ubuntu-latest
+    permissions: read-all
+    outputs:
+      examples: ${{ steps.select.outputs.changed_examples }}
+      examples_changed: ${{ steps.select.outputs.examples_changed }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.8'
+
+      - name: Select active Tier 3 examples
+        id: select
+        run: |
+          python .github/workflows/validator/services/inventory_loader.py \
+            --schedule \
+            --mode dynamic \
+            --inventory .github/workflows/validator/data/example_inventory.yaml
+
+  tier3-example-validation:
+    needs:
+      - plan-scheduled-validation
+      - select-tier3-examples
+    if: ${{ needs.plan-scheduled-validation.outputs.action == 'run_tier3' && needs.select-tier3-examples.outputs.examples_changed == 'true' }}
+    runs-on: ubuntu-latest
+    permissions: read-all
+    strategy:
+      fail-fast: false
+      matrix:
+        example: ${{ fromJson(needs.select-tier3-examples.outputs.examples) }}
+    name: ${{ format('Tier 3 example validation ({0})', matrix.example) }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.8'
+
+      - name: Install validator dependencies
+        run: python -m pip install -r .github/workflows/validator/requirements.txt
+
+      - name: Install Ianvs runtime dependencies
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install resources/third_party/sedna-0.6.0.1-py3-none-any.whl
+          python -m pip install -e . --no-deps
+
+      - name: Run Tier 3 validation
+        id: validation
+        continue-on-error: true
+        run: |
+          safe_name="$(printf '%s' "${{ matrix.example }}" | tr -c 'A-Za-z0-9._-' '-')"
+          result_file="tier3-results/${safe_name}.json"
+          mkdir -p tier3-results
+          echo "artifact_name=tier3-validation-${safe_name}" >> "${GITHUB_OUTPUT}"
+          echo "result_file=${result_file}" >> "${GITHUB_OUTPUT}"
+          python .github/workflows/validator/validation_runner.py \
+            --dependency \
+            --pip-install \
+            --prepare-env \
+            --smoke \
+            --example "${{ matrix.example }}" \
+            --inventory .github/workflows/validator/data/example_inventory.yaml \
+            --format json \
+            --report "${result_file}"
+
+      - name: Upload Tier 3 example result
+        if: ${{ always() && steps.validation.outputs.result_file != '' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.validation.outputs.artifact_name }}
+          path: ${{ steps.validation.outputs.result_file }}
+          if-no-files-found: ignore
+
+  publish-tier3-example-health:
+    needs:
+      - plan-scheduled-validation
+      - select-tier3-examples
+      - tier3-example-validation
+    if: ${{ always() && needs.plan-scheduled-validation.outputs.action == 'run_tier3' }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+    concurrency:
+      group: example-health-main
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.8'
+
+      - name: Install validator dependencies
+        run: python -m pip install -r .github/workflows/validator/requirements.txt
+
+      - name: Download Tier 3 results
+        uses: actions/download-artifact@v8
+        with:
+          pattern: tier3-validation-*
+          path: tier3-results
+          merge-multiple: true
+
+      - name: Verify complete Tier 3 result set
+        env:
+          EXPECTED_EXAMPLES: ${{ needs.select-tier3-examples.outputs.examples }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          expected = len(json.loads(os.environ["EXPECTED_EXAMPLES"]))
+          actual = len(list(Path("tier3-results").glob("*.json")))
+          if actual != expected:
+              raise SystemExit(
+                  "Tier 3 results are incomplete: expected {}, found {}".format(
+                      expected, actual
+                  )
+              )
+          PY
+
+      - name: Record Tier 3 metadata
+        env:
+          REPOSITORY: ${{ github.repository }}
+          SOURCE_RUN_ID: ${{ github.run_id }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          metadata = {
+              "repository": os.environ["REPOSITORY"],
+              "source_run_id": int(os.environ["SOURCE_RUN_ID"]),
+              "source_sha": os.environ["SOURCE_SHA"],
+              "source_tier": "T3",
+              "validated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+          }
+          Path("tier3-metadata.json").write_text(
+              json.dumps(metadata, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Render Tier 3 report and example health README
+        run: |
+          python .github/workflows/validator/services/report_generator.py \
+            --results tier3-results \
+            --mode dynamic \
+            --output tier3-validation-report.md \
+            --inventory .github/workflows/validator/data/example_inventory.yaml \
+            --health-metadata tier3-metadata.json \
+            --example-health-readme examples/README.md \
+            --step-summary \
+            --no-fail
+
+      - name: Upload Tier 3 health report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: tier3-example-health-report
+          path: |
+            tier3-results/
+            tier3-metadata.json
+            tier3-validation-report.md
+          if-no-files-found: ignore
+          retention-days: 30
+          overwrite: true
+
+      - name: Commit Tier 3 example health README to main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add examples/README.md
+          if git diff --cached --quiet; then
+            echo "The Tier 3 health README is already current."
+            exit 0
+          fi
+          git commit -m "docs: update example health from Tier 3"
+          git push origin HEAD:main
