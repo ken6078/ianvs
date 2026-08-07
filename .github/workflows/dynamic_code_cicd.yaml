@@ -20,7 +20,7 @@ on:
 
 jobs:
   plan-scheduled-validation:
-    if: ${{ github.event_name == 'schedule' }}
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'push' }}
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -41,21 +41,33 @@ jobs:
         with:
           python-version: '3.8'
 
-      - name: Plan today's scheduled validation
+      - name: Plan Tier 3 validation
         id: plan
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          python .github/workflows/validator/services/inventory_loader.py \
-            --plan-schedule \
-            --readme examples/README.md \
-            --repository "${{ github.repository }}" \
-            --cadence-days 7
+          if [ "${{ github.event_name }}" = "push" ]; then
+            {
+              echo "action=run_tier3"
+              echo "reason=Tier 3 runs after pushes to main."
+              echo "tier2_artifact_id="
+              echo "tier2_run_id="
+              echo "tier2_created_at="
+              echo "last_validated_at="
+              echo "next_tier3_at="
+            } >> "${GITHUB_OUTPUT}"
+          else
+            python .github/workflows/validator/services/inventory_loader.py \
+              --plan-schedule \
+              --readme examples/README.md \
+              --repository "${{ github.repository }}" \
+              --cadence-days 7
+          fi
 
-      - name: Write schedule decision summary
+      - name: Write validation decision summary
         run: |
           {
-            echo "## Scheduled validation decision"
+            echo "## Tier 3 validation decision"
             echo
             echo "- Action: \`${{ steps.plan.outputs.action }}\`"
             echo "- Reason: ${{ steps.plan.outputs.reason }}"
