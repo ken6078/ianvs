@@ -87,6 +87,21 @@ REASON_COLORS = {
     REASON_DEPENDENCY: "ff69b4",
     REASON_RESOURCE: "795548",
 }
+MANUAL_STATUS_BY_INVENTORY = {
+    "quarantined": STATUS_QUARANTINED,
+    "known issue": STATUS_KNOWN,
+    "known_issue": STATUS_KNOWN,
+    "hardware": STATUS_HARDWARE,
+    "requires_hardware": STATUS_HARDWARE,
+    "external": STATUS_EXTERNAL,
+    "requires_external_resource": STATUS_EXTERNAL,
+    "broken": STATUS_BROKEN,
+}
+SKIP_REASON_STATUSES = (
+    STATUS_QUARANTINED,
+    STATUS_KNOWN,
+    STATUS_HARDWARE,
+)
 STATUS_REPOSITORY = "kubeedge/ianvs"
 STATUS_BRANCH = "example-status"
 STATUS_RESULT_ROOT = ".github/example-status"
@@ -637,25 +652,45 @@ def create_example_status_snapshots(
         inventory_statuses = {
             str(item.get("status", "active")).lower() for item in inventory_group
         }
+        manual_statuses = {
+            MANUAL_STATUS_BY_INVENTORY.get(inventory_status)
+            for inventory_status in inventory_statuses
+        }
+        skip_reason = next(
+            (
+                status
+                for status in SKIP_REASON_STATUSES
+                if status in manual_statuses
+            ),
+            "",
+        )
         if has_failure:
             status = "failing"
             message = STATUS_BROKEN
+            label = "status"
+        elif skip_reason:
+            status = "skipped"
+            message = skip_reason
+            label = "reason"
         elif "ongoing" in inventory_statuses:
             status = STATUS_EXAMPLE_ONGOING
             message = STATUS_EXAMPLE_ONGOING
+            label = "status"
         elif "unvalidated" in inventory_statuses or not results:
             status = STATUS_CICD_ONGOING
             message = STATUS_CICD_ONGOING
+            label = "status"
         else:
             status = "passing"
             message = STATUS_RUNNABLE
+            label = "status"
         snapshots[status_file_name(example)] = {
             "example": example,
             "status": status,
             "validated_at": validated_at,
             "commit": commit,
             "schemaVersion": 1,
-            "label": "status",
+            "label": label,
             "message": message,
             "color": STATUS_COLORS[message],
         }
@@ -713,18 +748,8 @@ def classify_health_status(
     result: Optional[ExampleResult],
 ) -> Tuple[str, str]:
     inventory_status = str(inventory_example.get("status", "unvalidated")).lower()
-    manual_statuses = {
-        "quarantined": STATUS_QUARANTINED,
-        "known issue": STATUS_KNOWN,
-        "known_issue": STATUS_KNOWN,
-        "external": STATUS_EXTERNAL,
-        "requires_external_resource": STATUS_EXTERNAL,
-        "hardware": STATUS_HARDWARE,
-        "requires_hardware": STATUS_HARDWARE,
-        "broken": STATUS_BROKEN,
-    }
-    if inventory_status in manual_statuses:
-        return manual_statuses[inventory_status], ""
+    if inventory_status in MANUAL_STATUS_BY_INVENTORY:
+        return MANUAL_STATUS_BY_INVENTORY[inventory_status], ""
     if inventory_status == "unvalidated":
         return STATUS_CICD_ONGOING, ""
     if inventory_status == "ongoing":
@@ -914,6 +939,11 @@ def dynamic_skip_reason(example: ExampleResult) -> str:
             return UNVALIDATED_REASON
         if inventory_status == "ongoing":
             return ONGOING_REASON
+        manual_status = MANUAL_STATUS_BY_INVENTORY.get(inventory_status)
+        if manual_status in SKIP_REASON_STATUSES:
+            return health_badge(
+                "reason", manual_status, STATUS_COLORS[manual_status]
+            )
     return ""
 
 
