@@ -1,10 +1,10 @@
 {
-  "color": "brightgreen",
+  "color": "lightgrey",
   "commit": "3b0280738d833b3e1353c4de5f094840029dda9a",
-  "example": "llm_simple_qa",
+  "example": "pcb-aoi",
   "label": "status",
-  "message": "Runnable",
+  "message": "CI/CD onGoing",
   "schemaVersion": 1,
-  "status": "passing",
+  "status": "CI/CD onGoing",
   "validated_at": "2026-08-08T13:18:39.412455Z"
 }
