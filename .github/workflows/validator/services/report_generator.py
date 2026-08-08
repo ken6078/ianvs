@@ -103,7 +103,7 @@ SKIP_REASON_STATUSES = (
     STATUS_KNOWN,
     STATUS_HARDWARE,
 )
-STATUS_REPOSITORY = "kubeedge/ianvs"
+STATUS_REPOSITORY = "ken6078/ianvs"
 STATUS_BRANCH = "example-status"
 STATUS_RESULT_ROOT = ".github/example-status"
 
