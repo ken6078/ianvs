@@ -87,7 +87,7 @@ REASON_COLORS = {
     REASON_DEPENDENCY: "ff69b4",
     REASON_RESOURCE: "795548",
 }
-STATUS_REPOSITORY = "kubeedge/ianvs"
+STATUS_REPOSITORY = "ken6078/ianvs"
 STATUS_BRANCH = "example-status"
 STATUS_RESULT_ROOT = ".github/workflows/result"
 
