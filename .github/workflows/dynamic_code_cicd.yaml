@@ -57,9 +57,13 @@ jobs:
               echo "next_tier3_at="
             } >> "${GITHUB_OUTPUT}"
           else
+            if git fetch --no-tags origin example-status; then
+              git show FETCH_HEAD:.github/workflows/result/summary.json \
+                > example-status-summary.json
+            fi
             python .github/workflows/validator/services/inventory_loader.py \
               --plan-schedule \
-              --readme examples/README.md \
+              --health-metadata example-status-summary.json \
               --repository "${{ github.repository }}" \
               --cadence-days 7
           fi
@@ -424,7 +428,7 @@ jobs:
       actions: read
       contents: write
     concurrency:
-      group: example-health-main
+      group: example-status
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v7
@@ -448,28 +452,34 @@ jobs:
             --name tier2-base-health-results \
             --dir tier2-health
 
-      - name: Render example health README from Tier 2 base
+      - name: Generate Tier 2 example status snapshots
         run: |
           python .github/workflows/validator/services/report_generator.py \
             --results tier2-health/baseline-results \
-            --mode dynamic \
-            --output tier2-health-report.md \
             --inventory .github/workflows/validator/data/example_inventory.yaml \
             --health-metadata tier2-health/tier2-metadata.json \
-            --example-health-readme examples/README.md \
+            --example-status-output status-results \
             --no-fail
 
-      - name: Commit example health README to main
+      - name: Publish Tier 2 snapshots to example-status
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add examples/README.md
-          if git diff --cached --quiet; then
-            echo "The Tier 2 health README is already current."
+          status_worktree="$(mktemp -d)"
+          if git fetch --no-tags origin example-status; then
+            git worktree add -b example-status "${status_worktree}" FETCH_HEAD
+          else
+            git worktree add -b example-status "${status_worktree}" HEAD
+          fi
+          mkdir -p "${status_worktree}/.github/workflows/result"
+          cp status-results/*.json "${status_worktree}/.github/workflows/result/"
+          git -C "${status_worktree}" config user.name "github-actions[bot]"
+          git -C "${status_worktree}" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C "${status_worktree}" add .github/workflows/result
+          if git -C "${status_worktree}" diff --cached --quiet; then
+            echo "The Tier 2 example status snapshots are already current."
             exit 0
           fi
-          git commit -m "docs: update example health from Tier 2"
-          git push origin HEAD:main
+          git -C "${status_worktree}" commit -m "ci: update example status from Tier 2"
+          git -C "${status_worktree}" push origin example-status
 
   select-tier3-examples:
     needs: plan-scheduled-validation
@@ -562,7 +572,7 @@ jobs:
       actions: read
       contents: write
     concurrency:
-      group: example-health-main
+      group: example-status
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v7
@@ -629,16 +639,22 @@ jobs:
           )
           PY
 
-      - name: Render Tier 3 report and example health README
+      - name: Render Tier 3 report
         run: |
           python .github/workflows/validator/services/report_generator.py \
             --results tier3-results \
             --mode dynamic \
             --output tier3-validation-report.md \
+            --step-summary \
+            --no-fail
+
+      - name: Generate Tier 3 example status snapshots
+        run: |
+          python .github/workflows/validator/services/report_generator.py \
+            --results tier3-results \
             --inventory .github/workflows/validator/data/example_inventory.yaml \
             --health-metadata tier3-metadata.json \
-            --example-health-readme examples/README.md \
-            --step-summary \
+            --example-status-output status-results \
             --no-fail
 
       - name: Upload Tier 3 health report
@@ -654,14 +670,22 @@ jobs:
           retention-days: 30
           overwrite: true
 
-      - name: Commit Tier 3 example health README to main
+      - name: Publish Tier 3 snapshots to example-status
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add examples/README.md
-          if git diff --cached --quiet; then
-            echo "The Tier 3 health README is already current."
+          status_worktree="$(mktemp -d)"
+          if git fetch --no-tags origin example-status; then
+            git worktree add -b example-status "${status_worktree}" FETCH_HEAD
+          else
+            git worktree add -b example-status "${status_worktree}" HEAD
+          fi
+          mkdir -p "${status_worktree}/.github/workflows/result"
+          cp status-results/*.json "${status_worktree}/.github/workflows/result/"
+          git -C "${status_worktree}" config user.name "github-actions[bot]"
+          git -C "${status_worktree}" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C "${status_worktree}" add .github/workflows/result
+          if git -C "${status_worktree}" diff --cached --quiet; then
+            echo "The Tier 3 example status snapshots are already current."
             exit 0
           fi
-          git commit -m "docs: update example health from Tier 3"
-          git push origin HEAD:main
+          git -C "${status_worktree}" commit -m "ci: update example status from Tier 3"
+          git -C "${status_worktree}" push origin example-status

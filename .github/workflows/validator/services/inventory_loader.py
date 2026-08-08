@@ -266,6 +266,24 @@ def load_health_record(readme_path: Path) -> Optional[dict]:
         )
 
 
+def load_health_metadata(metadata_path: Path) -> Optional[dict]:
+    """Load validation timing from example-status/summary.json."""
+    if not metadata_path.is_file():
+        return None
+    try:
+        payload = json.loads(metadata_path.read_text(encoding="utf-8"))
+        validated_at = parse_utc(str(payload["validated_at"]))
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+        raise ValueError(
+            "Invalid example status metadata in {}: {}".format(metadata_path, error)
+        ) from error
+    return {
+        "source_run_id": 0,
+        "source_sha": str(payload.get("commit", "")),
+        "validated_at": validated_at,
+    }
+
+
 def github_json(url: str, token: str) -> dict:
     request = urllib.request.Request(
         url,
@@ -361,7 +379,7 @@ def scheduled_validation_plan(
     if health_record is None:
         return {
             "action": SCHEDULE_ACTION_RUN_TIER3,
-            "reason": "The README has no T2/T3 validation record.",
+            "reason": "The example-status branch has no T2/T3 validation record.",
             "tier2_artifact_id": 0,
             "tier2_run_id": 0,
             "tier2_created_at": "",
@@ -375,7 +393,7 @@ def scheduled_validation_plan(
     return {
         "action": SCHEDULE_ACTION_RUN_TIER3 if due else SCHEDULE_ACTION_NONE,
         "reason": (
-            "The README validation record is at least {} days old.".format(
+            "The example-status validation record is at least {} days old.".format(
                 cadence_days
             )
             if due
@@ -516,6 +534,11 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Choose whether today's scheduled run publishes T2, runs T3, or waits.",
     )
     parser.add_argument("--readme", default="examples/README.md")
+    parser.add_argument(
+        "--health-metadata",
+        default="",
+        help="example-status summary.json; preferred over the legacy README record.",
+    )
     parser.add_argument("--repository", default=os.environ.get("GITHUB_REPOSITORY", ""))
     parser.add_argument("--token", default=os.environ.get("GITHUB_TOKEN", ""))
     parser.add_argument(
@@ -542,7 +565,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             return 2
         now = parse_utc(args.now) if args.now else datetime.now(timezone.utc)
         try:
-            health_record = load_health_record(Path(args.readme))
+            health_record = (
+                load_health_metadata(Path(args.health_metadata))
+                if args.health_metadata
+                else load_health_record(Path(args.readme))
+            )
             tier2_artifact = select_pending_tier2_artifact(
                 load_tier2_health_artifacts(args.repository, args.token),
                 now,
