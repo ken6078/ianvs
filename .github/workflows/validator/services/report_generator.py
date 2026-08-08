@@ -27,6 +27,7 @@ import glob
 import html
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.request
@@ -34,7 +35,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 try:
     from inventory_loader import DEFAULT_INVENTORY_PATH, load_inventory_examples
@@ -86,6 +87,9 @@ REASON_COLORS = {
     REASON_DEPENDENCY: "ff69b4",
     REASON_RESOURCE: "795548",
 }
+STATUS_REPOSITORY = "kubeedge/ianvs"
+STATUS_BRANCH = "example-status"
+STATUS_RESULT_ROOT = ".github/workflows/result"
 
 
 @dataclass
@@ -210,6 +214,11 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         default="",
         help="Optional JSON metadata containing T2/T3 source and validation time.",
     )
+    parser.add_argument(
+        "--example-status-output",
+        default="",
+        help="Optional directory for example-status snapshot JSON files.",
+    )
     return parser.parse_args(argv)
 
 
@@ -236,6 +245,28 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             inventory_examples, report, metadata
         )
         write_text_file(health_readme, args.example_health_readme)
+    if args.example_status_output:
+        inventory_examples = load_inventory_examples(
+            Path(args.inventory), active_only=False
+        )
+        metadata = load_health_metadata(args.health_metadata)
+        snapshots = create_example_status_snapshots(
+            report,
+            inventory_examples,
+            str(metadata["validated_at"]),
+            str(metadata["source_sha"]),
+        )
+        if not snapshots:
+            print("No validation results matched the example inventory.", file=sys.stderr)
+            return 2
+        write_example_status_snapshots(
+            snapshots,
+            {
+                "validated_at": str(metadata["validated_at"]),
+                "commit": str(metadata["source_sha"]),
+            },
+            Path(args.example_status_output),
+        )
 
     if report.passed or args.no_fail:
         return 0
@@ -474,7 +505,6 @@ def render_example_health_readme(
     report: CombinedReport,
     metadata: Dict[str, object],
 ) -> str:
-    results = {example.identity: example for example in report.examples}
     lines = [
         "# Ianvs Examples",
         "",
@@ -485,39 +515,11 @@ def render_example_health_readme(
         ),
         "",
     ]
-    validated_at_value = str(metadata.get("validated_at", ""))
-    if validated_at_value:
-        validated_at = parse_utc(validated_at_value)
-        display_time = validated_at.strftime("%Y-%m-%d %H:%M UTC")
-        repository = str(metadata.get("repository", ""))
-        source_run_id = int(metadata.get("source_run_id", 0))
-        if repository and source_run_id:
-            run_url = "https://github.com/{}/actions/runs/{}".format(
-                repository, source_run_id
-            )
-            lines.append(
-                "**Last T2/T3 Validation Time:** [{}]({})".format(
-                    display_time, run_url
-                )
-            )
-        else:
-            lines.append(
-                "**Last T2/T3 Validation Time:** `{}`".format(display_time)
-            )
-        record = {
-            "schema_version": 1,
-            "source_run_id": source_run_id,
-            "source_sha": str(metadata.get("source_sha", "")),
-            "source_tier": str(metadata.get("source_tier", "")),
-            "validated_at": validated_at.isoformat().replace("+00:00", "Z"),
-        }
-        lines.append(
-            "<!-- ianvs-example-health-record {} -->".format(
-                json.dumps(record, sort_keys=True, separators=(",", ":"))
-            )
+    lines.append(
+        "**Last T2/T3 Validation Time:** {}".format(
+            dynamic_json_badge("validated at", "summary.json", "$.validated_at")
         )
-    else:
-        lines.append("**Last T2/T3 Validation Time:** `Not available`")
+    )
 
     lines.extend(
         [
@@ -529,7 +531,6 @@ def render_example_health_readme(
             "    <tr>",
             "      <th>Example</th>",
             "      <th>Benchmark Unit</th>",
-            "      <th>Path</th>",
             "      <th>Status</th>",
             "    </tr>",
             "  </thead>",
@@ -557,9 +558,10 @@ def render_example_health_readme(
         for index, inventory_example in enumerate(benchmark_units):
             path = str(inventory_example.get("path", "")).rstrip("/")
             benchmark_name = str(inventory_example.get("name") or path)
-            status, reason = classify_health_status(
-                inventory_example,
-                results.get((benchmark_name, path)),
+            readme_path = path[9:] if path.startswith("examples/") else path
+            benchmark_link = '<a href="./{}">{}</a>'.format(
+                quote(readme_path, safe="/"),
+                html.escape(benchmark_name),
             )
             lines.append("    <tr>")
             if index == 0:
@@ -575,16 +577,95 @@ def render_example_health_readme(
                     )
             lines.extend(
                 [
-                    "      <td>{}</td>".format(html.escape(benchmark_name)),
-                    "      <td><code>{}</code></td>".format(html.escape(path)),
+                    "      <td>{}</td>".format(benchmark_link),
                     "      <td>{}</td>".format(
-                        render_health_badges(status, reason)
+                        dynamic_json_badge(
+                            "status", status_file_name(example_name), "$.status"
+                        )
                     ),
                     "    </tr>",
                 ]
             )
     lines.extend(["  </tbody>", "</table>"])
     return "\n".join(lines).rstrip() + "\n"
+
+
+def status_file_name(example: str) -> str:
+    normalized = re.sub(r"[^A-Za-z0-9._-]+", "_", example.strip())
+    normalized = normalized.strip("._")
+    if not normalized:
+        raise ValueError("Example name does not contain a safe filename character")
+    return normalized + ".json"
+
+
+def create_example_status_snapshots(
+    report: CombinedReport,
+    inventory_examples: Sequence[dict],
+    validated_at: str,
+    commit: str,
+) -> Dict[str, dict]:
+    result_by_identity = {example.identity: example for example in report.examples}
+    grouped_results: Dict[str, List[ExampleResult]] = {}
+
+    for inventory_example in inventory_examples:
+        example = str(
+            inventory_example.get("example")
+            or inventory_example.get("name")
+            or inventory_example.get("path", "")
+        )
+        name = str(inventory_example.get("name", ""))
+        path = str(inventory_example.get("path", "")).rstrip("/")
+        result = result_by_identity.get((name, path))
+        if result is not None:
+            grouped_results.setdefault(example, []).append(result)
+
+    snapshots = {}
+    for example, results in grouped_results.items():
+        snapshots[status_file_name(example)] = {
+            "example": example,
+            "status": (
+                "failing"
+                if any(result.has_blocking_errors for result in results)
+                else "passing"
+            ),
+            "validated_at": validated_at,
+            "commit": commit,
+        }
+    return snapshots
+
+
+def write_example_status_snapshots(
+    snapshots: Dict[str, dict], summary: dict, output: Path
+) -> None:
+    output.mkdir(parents=True, exist_ok=True)
+    for filename, payload in sorted(snapshots.items()):
+        (output / filename).write_text(
+            json.dumps(payload, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+    (output / "summary.json").write_text(
+        json.dumps(summary, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def dynamic_json_badge(label: str, filename: str, query: str) -> str:
+    raw_url = "https://raw.githubusercontent.com/{}/{}/{}/{}".format(
+        STATUS_REPOSITORY, STATUS_BRANCH, STATUS_RESULT_ROOT, filename
+    )
+    badge_url = "https://img.shields.io/badge/dynamic/json?{}".format(
+        urlencode(
+            {
+                "url": raw_url,
+                "query": query,
+                "label": label,
+                "cacheSeconds": "300",
+            }
+        )
+    )
+    return '<img alt="{}" src="{}">'.format(
+        html.escape(label, quote=True), html.escape(badge_url, quote=True)
+    )
 
 
 def classify_health_status(
