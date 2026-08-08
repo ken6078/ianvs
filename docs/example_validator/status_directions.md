@@ -1,0 +1,63 @@
+# Example Status Directions
+
+The [Example Classification Matrix](../../examples/README.md) is the maintainer-facing health summary. This page defines its status badges, lifecycle meanings, and interpretation rules. The detailed CI artifacts remain the evidence source behind each status.
+
+See also:
+
+- [Validation rules](validation_rules.md)
+- [Classification policy](classification_policy.md)
+- [Local validation](local_validation.md)
+
+## Status model
+
+![Example status transition standard](../proposals/scenarios/example-restoration/phase-3-2026-term-2/images/example-status-STD.png)
+
+| Badge | Meaning |
+| --- | --- |
+| ![Runnable](https://img.shields.io/badge/status-Runnable-brightgreen) | The active example passed the latest published broad validation. |
+| ![Broken](https://img.shields.io/badge/status-Broken-red) | The latest broad result contains a blocking failure. |
+| ![CI/CD onGoing](https://img.shields.io/badge/status-CI%2FCD%20onGoing-lightgrey) | The benchmark is inventoried, but dynamic validation has not been activated or has no published result. |
+| ![Example onGoing](https://img.shields.io/badge/status-Example%20onGoing-yellow) | Development of the example itself is still in progress. |
+| ![Requires external dataset or model download](https://img.shields.io/badge/status-Requires%20external%20dataset%20or%20model%20download-blue) | Normal CI cannot obtain a required dataset or model. |
+| ![Requires GPU or special hardware](https://img.shields.io/badge/status-Requires%20GPU%20or%20special%20hardware-orange) | The required hardware is unavailable on normal validation runners. |
+| ![Quarantined](https://img.shields.io/badge/status-Quarantined-8a2be2) | Dynamic validation is intentionally disabled pending repair or a maintainer decision. |
+| ![Known issue](https://img.shields.io/badge/status-Known%20issue-critical) | A failure has been triaged and accepted temporarily. |
+
+## Broken reasons
+
+A reason describes why an example is broken; it is not a second lifecycle status.
+
+| Badge | Interpretation |
+| --- | --- |
+| ![Dataset or resource unavailable](https://img.shields.io/badge/reason-Dataset%20or%20resource%20unavailable-795548) | A dataset, model, service, or other required resource is unavailable. |
+| ![Dependency drift](https://img.shields.io/badge/reason-Dependency%20drift-ff69b4) | A dependency no longer resolves, installs, imports, or behaves compatibly. |
+| ![Documentation issue](https://img.shields.io/badge/reason-Documentation%20issue-607d8b) | Instructions or documented paths do not match the example. |
+
+Other report-level reasons, including hardware assumptions and metric edge cases, may appear in CI artifacts even when the matrix shows the broader `Broken` status.
+
+## How to interpret the matrix
+
+- Each example normally has one primary display status.
+- The displayed status is grouped at the top-level example, while the inventory and reports identify individual benchmark units.
+- `Last T2/T3 Validation Time` is the timestamp of the latest published broad evidence, not the time of the last README edit.
+- T0/T1 results help review a pull request but do not replace T2/T3 health evidence.
+- `Runnable` means the validated path passed the checks in its configured tier. It is not a guarantee for every operating system, hardware combination, external resource, or undeclared Python version.
+- A `Runtime smoke test (mocked_llm)` result validates integration with substituted responses only. It does not validate a real model, external provider, GPU, or output quality.
+- `Known issue` is a triaged state. `Quarantined` additionally means normal dynamic validation is intentionally disabled.
+- Pre-existing failures do not block unrelated pull requests, but they remain visible until fixed or explicitly reclassified.
+
+## Status publication
+
+T2/T3 workflows generate per-example JSON snapshots and a summary, then publish them to the `example-status` branch. `examples/README.md` renders badges from those snapshots. The snapshot includes the example identifier, current result, validation timestamp, and source commit.
+
+If a badge and a workflow report disagree, prefer the newest complete T2/T3 report, verify that snapshot publication succeeded, and then refresh or repair the status branch. Do not manually claim a passing status without matching validation evidence.
+
+## Maintainer actions
+
+| Observed state | Recommended action |
+| --- | --- |
+| New PR regression | Request a fix or explicitly approve an exception. |
+| Pre-existing failure | Keep an unrelated PR unblocked and track the debt separately. |
+| Time-based failure | Confirm the cause, update inventory classification, and open a maintenance issue if restoration is planned. |
+| External resource or hardware constraint | Document the exact requirement and preserve any available lightweight checks. |
+| Repair completed | Return the entry to `active`, run the highest practical tier, and retain the report as evidence. |

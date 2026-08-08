@@ -1,6 +1,6 @@
 # Ianvs Examples
 
-For status meanings, badge definitions, and broken-status subtypes, see [`status_directions.md`](../docs/proposals/scenarios/example-restoration/phase-3-2026-term-2/status_directions.md).
+For status meanings, badge definitions, and broken-status subtypes, see [`status_directions.md`](../docs/example_validator/status_directions.md).
 
 **Last T2/T3 Validation Time:** <img alt="validated at" src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fkubeedge%2Fianvs%2Fexample-status%2F.github%2Fexample-status%2Fsummary.json&amp;query=%24.validated_at_display&amp;label=validated+at&amp;cacheSeconds=300">
 
