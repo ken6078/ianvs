@@ -58,7 +58,7 @@ jobs:
             } >> "${GITHUB_OUTPUT}"
           else
             if git fetch --no-tags origin example-status; then
-              git show FETCH_HEAD:.github/workflows/result/summary.json \
+              git show FETCH_HEAD:.github/example-status/summary.json \
                 > example-status-summary.json
             fi
             python .github/workflows/validator/services/inventory_loader.py \
@@ -469,11 +469,12 @@ jobs:
           else
             git worktree add -b example-status "${status_worktree}" HEAD
           fi
-          mkdir -p "${status_worktree}/.github/workflows/result"
-          cp status-results/*.json "${status_worktree}/.github/workflows/result/"
+          git -C "${status_worktree}" rm -r --ignore-unmatch .github/workflows/result
+          mkdir -p "${status_worktree}/.github/example-status"
+          cp status-results/*.json "${status_worktree}/.github/example-status/"
           git -C "${status_worktree}" config user.name "github-actions[bot]"
           git -C "${status_worktree}" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git -C "${status_worktree}" add .github/workflows/result
+          git -C "${status_worktree}" add .github/example-status
           if git -C "${status_worktree}" diff --cached --quiet; then
             echo "The Tier 2 example status snapshots are already current."
             exit 0
@@ -678,11 +679,12 @@ jobs:
           else
             git worktree add -b example-status "${status_worktree}" HEAD
           fi
-          mkdir -p "${status_worktree}/.github/workflows/result"
-          cp status-results/*.json "${status_worktree}/.github/workflows/result/"
+          git -C "${status_worktree}" rm -r --ignore-unmatch .github/workflows/result
+          mkdir -p "${status_worktree}/.github/example-status"
+          cp status-results/*.json "${status_worktree}/.github/example-status/"
           git -C "${status_worktree}" config user.name "github-actions[bot]"
           git -C "${status_worktree}" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git -C "${status_worktree}" add .github/workflows/result
+          git -C "${status_worktree}" add .github/example-status
           if git -C "${status_worktree}" diff --cached --quiet; then
             echo "The Tier 3 example status snapshots are already current."
             exit 0

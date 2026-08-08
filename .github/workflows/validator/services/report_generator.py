@@ -89,7 +89,7 @@ REASON_COLORS = {
 }
 STATUS_REPOSITORY = "kubeedge/ianvs"
 STATUS_BRANCH = "example-status"
-STATUS_RESULT_ROOT = ".github/workflows/result"
+STATUS_RESULT_ROOT = ".github/example-status"
 
 
 @dataclass
