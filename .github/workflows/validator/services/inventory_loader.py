@@ -43,7 +43,8 @@ Modes:
         from the inventory.
 
 GitHub Actions outputs:
-    mode, run_all, examples_changed, changed_examples, changed_files, check_items
+    mode, run_all, examples_changed, changed_examples, validation_matrix,
+    changed_files, check_items
 """
 
 import argparse
@@ -60,6 +61,7 @@ from typing import Dict, List, Optional, Sequence
 
 
 DEFAULT_INVENTORY_PATH = ".github/workflows/validator/data/example_inventory.yaml"
+DEFAULT_PYTHON_VERSION = "3.8"
 DYNAMIC_RUN_ALL_PREFIXES = ("core/", ".github/workflows/")
 STATIC_TRACKED_FILE_SUFFIXES = (".py", ".yaml", ".yml")
 MODE_STATIC = "static"
@@ -201,6 +203,14 @@ def example_selector(example: dict) -> str:
     return str(example.get("benchmark_file") or example.get("name") or example["path"])
 
 
+def example_python_version(example: dict) -> str:
+    """Return the benchmark Python version, falling back to the CI default."""
+    configured_version = example.get("python_version")
+    if configured_version is None or not str(configured_version).strip():
+        return DEFAULT_PYTHON_VERSION
+    return str(configured_version).strip()
+
+
 def inventory_selection_report(
     mode: str,
     examples: Sequence[dict],
@@ -217,6 +227,13 @@ def inventory_selection_report(
         "changed_files": list(changed_files),
         "examples_changed": bool(examples),
         "changed_examples": [example_selector(example) for example in examples],
+        "validation_matrix": [
+            {
+                "selector": example_selector(example),
+                "python_version": example_python_version(example),
+            }
+            for example in examples
+        ],
         "check_items": list(examples),
     }
 
@@ -464,6 +481,10 @@ def export_github_outputs(report: dict, output_path: str) -> None:
         )
         print(
             "changed_examples={}".format(json.dumps(report["changed_examples"])),
+            file=output,
+        )
+        print(
+            "validation_matrix={}".format(json.dumps(report["validation_matrix"])),
             file=output,
         )
         print("changed_files={}".format(json.dumps(report["changed_files"])), file=output)

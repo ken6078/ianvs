@@ -2,6 +2,7 @@ examples:
 - name: perception_reasoning_test
   example: "Cloud_Robotics"
   status: unvalidated
+  python_version: null
   path: "examples/Cloud_Robotics/cloud-edge-collaborative-inference_bench/perception-reasoning"
   readme_file: "examples/Cloud_Robotics/cloud-edge-collaborative-inference_bench/perception-reasoning/README.md"
   benchmark_file: "examples/Cloud_Robotics/cloud-edge-collaborative-inference_bench/perception-reasoning/benchmarkingjob.yaml"
@@ -11,6 +12,7 @@ examples:
 - name: rfnet_singletask_learning
   example: "Cloud_Robotics"
   status: unvalidated
+  python_version: null
   path: "examples/Cloud_Robotics/singletask_learning_bench/Semantic_Segmentation"
   readme_file: "examples/Cloud_Robotics/singletask_learning_bench/Semantic_Segmentation/Readme.md"
   benchmark_file: "examples/Cloud_Robotics/singletask_learning_bench/Semantic_Segmentation/benchmarkingjob.yaml"
@@ -20,6 +22,7 @@ examples:
 - name: government_poster_agent
   example: "GovDoc2Poster"
   status: unvalidated
+  python_version: null
   path: "examples/GovDoc2Poster/singletask_learning_bench"
   readme_file: "examples/GovDoc2Poster/singletask_learning_bench/README.md"
   benchmark_file: "examples/GovDoc2Poster/singletask_learning_bench/benchmarkingjob.yaml"
@@ -29,6 +32,7 @@ examples:
 - name: feature_extraction
   example: "MOT17"
   status: unvalidated
+  python_version: null
   path: "examples/MOT17/multiedge_inference_bench/pedestrian_tracking"
   readme_file: "examples/MOT17/multiedge_inference_bench/pedestrian_tracking/README.md"
   benchmark_file: "examples/MOT17/multiedge_inference_bench/pedestrian_tracking/reid_job.yaml"
@@ -38,6 +42,7 @@ examples:
 - name: tracking
   example: "MOT17"
   status: unvalidated
+  python_version: null
   path: "examples/MOT17/multiedge_inference_bench/pedestrian_tracking"
   readme_file: "examples/MOT17/multiedge_inference_bench/pedestrian_tracking/README.md"
   benchmark_file: "examples/MOT17/multiedge_inference_bench/pedestrian_tracking/tracking_job.yaml"
@@ -47,6 +52,7 @@ examples:
 - name: privacy_preserving_llm_collaboration
   example: "PIPL"
   status: unvalidated
+  python_version: null
   path: "examples/PIPL/edge-cloud_collaborative_learning_bench"
   readme_file: "examples/PIPL/edge-cloud_collaborative_learning_bench/README.md"
   benchmark_file: "examples/PIPL/edge-cloud_collaborative_learning_bench/benchmarkingjob.yaml"
@@ -56,6 +62,7 @@ examples:
 - name: palletizing_detection
   example: "RoboDK Palletizing"
   status: unvalidated
+  python_version: null
   path: "examples/RoboDK Palletizing/singletask_learning_bench"
   readme_file: "examples/RoboDK Palletizing/singletask_learning_bench/readme.md"
   benchmark_file: "examples/RoboDK Palletizing/singletask_learning_bench/benchmarkingjob.yaml"
@@ -65,6 +72,7 @@ examples:
 - name: privacy_aware_query_routing
   example: "TAB"
   status: unvalidated
+  python_version: null
   path: "examples/TAB/cloud_edge_collaborative_inference_bench"
   readme_file: "examples/TAB/cloud_edge_collaborative_inference_bench/readme.md"
   benchmark_file: "examples/TAB/cloud_edge_collaborative_inference_bench/benchmarkingjob.yaml"
@@ -74,6 +82,7 @@ examples:
 - name: execution_yaml_pending
   example: "aoa"
   status: onGoing
+  python_version: null
   path: "examples/aoa"
   readme_file: null
   benchmark_file: null
@@ -83,6 +92,7 @@ examples:
 - name: yolo_lifelong_learning_five_model
   example: "bdd"
   status: unvalidated
+  python_version: null
   path: "examples/bdd/lifelong_learning_bench/curb-detection"
   readme_file: "examples/bdd/lifelong_learning_bench/curb-detection/README.md"
   benchmark_file: "examples/bdd/lifelong_learning_bench/curb-detection/benchmarkingjob.yaml"
@@ -92,6 +102,7 @@ examples:
 - name: fedi_carl
   example: "cifar100"
   status: unvalidated
+  python_version: null
   path: "examples/cifar100/fci_ssl/fed_ci_match"
   readme_file: null
   benchmark_file: "examples/cifar100/fci_ssl/fed_ci_match/benchmarkingjob.yaml"
@@ -101,6 +112,7 @@ examples:
 - name: fci_ssl_test
   example: "cifar100"
   status: unvalidated
+  python_version: null
   path: "examples/cifar100/fci_ssl/fed_ci_match_v2"
   readme_file: null
   benchmark_file: "examples/cifar100/fci_ssl/fed_ci_match_v2/benchmarkingjob.yaml"
@@ -110,6 +122,7 @@ examples:
 - name: glfc_match
   example: "cifar100"
   status: unvalidated
+  python_version: null
   path: "examples/cifar100/fci_ssl/glfc"
   readme_file: null
   benchmark_file: "examples/cifar100/fci_ssl/glfc/benchmarkingjob.yaml"
@@ -119,6 +132,7 @@ examples:
 - name: federated_class_incremental_learning
   example: "cifar100"
   status: unvalidated
+  python_version: null
   path: "examples/cifar100/federated_class_incremental_learning/fedavg"
   readme_file: null
   benchmark_file: "examples/cifar100/federated_class_incremental_learning/fedavg/benchmarkingjob.yaml"
@@ -128,6 +142,7 @@ examples:
 - name: fedavg_test
   example: "cifar100"
   status: unvalidated
+  python_version: null
   path: "examples/cifar100/federated_learning/fedavg"
   readme_file: null
   benchmark_file: "examples/cifar100/federated_learning/fedavg/benchmarkingjob.yaml"
@@ -137,6 +152,7 @@ examples:
 - name: rfnet_singletask_learning
   example: "cityscapes"
   status: unvalidated
+  python_version: null
   path: "examples/cityscapes/singletask_learning_bench/semantic-segmentation"
   readme_file: null
   benchmark_file: "examples/cityscapes/singletask_learning_bench/semantic-segmentation/benchmarkingjob.yaml"
@@ -146,6 +162,7 @@ examples:
 - name: rfnet_lifelong_learning
   example: "cityscapes-synthia"
   status: unvalidated
+  python_version: null
   path: "examples/cityscapes-synthia/lifelong_learning_bench/curb-detection"
   readme_file: "examples/cityscapes-synthia/lifelong_learning_bench/curb-detection/README.md"
   benchmark_file: "examples/cityscapes-synthia/lifelong_learning_bench/curb-detection/benchmarkingjob.yaml"
@@ -155,6 +172,7 @@ examples:
 - name: rfnet_lifelong_learning_full_test
   example: "cityscapes-synthia"
   status: unvalidated
+  python_version: null
   path: "examples/cityscapes-synthia/lifelong_learning_bench/semantic-segmentation"
   readme_file: "examples/cityscapes-synthia/lifelong_learning_bench/semantic-segmentation/README.md"
   benchmark_file: "examples/cityscapes-synthia/lifelong_learning_bench/semantic-segmentation/benchmarkingjob-fulltest.yaml"
@@ -164,6 +182,7 @@ examples:
 - name: rfnet_lifelong_learning_small_test
   example: "cityscapes-synthia"
   status: unvalidated
+  python_version: null
   path: "examples/cityscapes-synthia/lifelong_learning_bench/semantic-segmentation"
   readme_file: "examples/cityscapes-synthia/lifelong_learning_bench/semantic-segmentation/README.md"
   benchmark_file: "examples/cityscapes-synthia/lifelong_learning_bench/semantic-segmentation/benchmarkingjob-smalltest.yaml"
@@ -173,6 +192,7 @@ examples:
 - name: rfnet_lifelong_learning_travel_mode
   example: "cityscapes-synthia"
   status: unvalidated
+  python_version: null
   path: "examples/cityscapes-synthia/lifelong_learning_bench/semantic-segmentation"
   readme_file: "examples/cityscapes-synthia/lifelong_learning_bench/semantic-segmentation/README.md"
   benchmark_file: "examples/cityscapes-synthia/lifelong_learning_bench/semantic-segmentation/benchmarkingjob-traveltest.yaml"
@@ -182,6 +202,7 @@ examples:
 - name: rfnet_lifelong_learning
   example: "cityscapes-synthia"
   status: unvalidated
+  python_version: null
   path: "examples/cityscapes-synthia/lifelong_learning_bench/semantic-segmentation"
   readme_file: "examples/cityscapes-synthia/lifelong_learning_bench/semantic-segmentation/README.md"
   benchmark_file: "examples/cityscapes-synthia/lifelong_learning_bench/semantic-segmentation/benchmarkingjob.yaml"
@@ -191,6 +212,7 @@ examples:
 - name: rfnet_lifelong_learning
   example: "cityscapes-synthia"
   status: unvalidated
+  python_version: null
   path: "examples/cityscapes-synthia/scene-based-unknown-task-recognition/curb-detection"
   readme_file: "examples/cityscapes-synthia/scene-based-unknown-task-recognition/curb-detection/Readme.md"
   benchmark_file: "examples/cityscapes-synthia/scene-based-unknown-task-recognition/curb-detection/benchmarkingjob.yaml"
@@ -200,6 +222,7 @@ examples:
 - name: query_routing
   example: "cloud-edge-collaborative-inference-for-llm"
   status: unvalidated
+  python_version: null
   path: "examples/cloud-edge-collaborative-inference-for-llm"
   readme_file: "examples/cloud-edge-collaborative-inference-for-llm/README.md"
   benchmark_file: "examples/cloud-edge-collaborative-inference-for-llm/benchmarkingjob.yaml"
@@ -209,6 +232,7 @@ examples:
 - name: speculative_decoding
   example: "cloud-edge-speculative-decoding-benchmark"
   status: unvalidated
+  python_version: null
   path: "examples/cloud-edge-speculative-decoding-benchmark"
   readme_file: "examples/cloud-edge-speculative-decoding-benchmark/README.md"
   benchmark_file: "examples/cloud-edge-speculative-decoding-benchmark/benchmarkingjob.yaml"
@@ -218,6 +242,7 @@ examples:
 - name: speculative_decoding_block
   example: "cloud-edge-speculative-decoding-benchmark"
   status: unvalidated
+  python_version: null
   path: "examples/cloud-edge-speculative-decoding-benchmark"
   readme_file: "examples/cloud-edge-speculative-decoding-benchmark/README.md"
   benchmark_file: "examples/cloud-edge-speculative-decoding-benchmark/benchmarkingjob_block.yaml"
@@ -227,6 +252,7 @@ examples:
 - name: vla_data_selection
   example: "cloud_VLA_finetune"
   status: unvalidated
+  python_version: null
   path: "examples/cloud_VLA_finetune/singletask_learning_bench"
   readme_file: "examples/cloud_VLA_finetune/singletask_learning_bench/README.md"
   benchmark_file: "examples/cloud_VLA_finetune/singletask_learning_bench/benchmarkingjob.yaml"
@@ -236,6 +262,7 @@ examples:
 - name: fedavgm_peft
   example: "federated-llm"
   status: unvalidated
+  python_version: null
   path: "examples/federated-llm/fedllm-peft"
   readme_file: "examples/federated-llm/fedllm-peft/README.md"
   benchmark_file: "examples/federated-llm/fedllm-peft/benchmarkingjob.yaml"
@@ -245,6 +272,7 @@ examples:
 - name: objective_political_question_answering
   example: "government"
   status: unvalidated
+  python_version: null
   path: "examples/government/singletask_learning_bench/objective"
   readme_file: null
   benchmark_file: "examples/government/singletask_learning_bench/objective/benchmarkingjob.yaml"
@@ -254,6 +282,7 @@ examples:
 - name: subjective_political_question_answering
   example: "government"
   status: unvalidated
+  python_version: null
   path: "examples/government/singletask_learning_bench/subjective"
   readme_file: null
   benchmark_file: "examples/government/singletask_learning_bench/subjective/benchmarkingjob.yaml"
@@ -263,6 +292,7 @@ examples:
 - name: rag_singletask_learning
   example: "government_rag"
   status: unvalidated
+  python_version: null
   path: "examples/government_rag/singletask_learning_bench"
   readme_file: null
   benchmark_file: "examples/government_rag/singletask_learning_bench/benchmarkingjob.yaml"
@@ -272,6 +302,7 @@ examples:
 - name: automatic_classification
   example: "imagenet"
   status: unvalidated
+  python_version: null
   path: "examples/imagenet/multiedge_inference_bench"
   readme_file: "examples/imagenet/multiedge_inference_bench/README.md"
   benchmark_file: "examples/imagenet/multiedge_inference_bench/classification_job_automatic.yaml"
@@ -281,6 +312,7 @@ examples:
 - name: manual_classification
   example: "imagenet"
   status: unvalidated
+  python_version: null
   path: "examples/imagenet/multiedge_inference_bench"
   readme_file: "examples/imagenet/multiedge_inference_bench/README.md"
   benchmark_file: "examples/imagenet/multiedge_inference_bench/classification_job_manual.yaml"
@@ -290,6 +322,7 @@ examples:
 - name: llio_pose_estimation
   example: "industrialEI"
   status: unvalidated
+  python_version: null
   path: "examples/industrialEI/pose-estimation-llio"
   readme_file: "examples/industrialEI/pose-estimation-llio/README.md"
   benchmark_file: "examples/industrialEI/pose-estimation-llio/benchmarkingjob.yaml"
@@ -299,6 +332,7 @@ examples:
 - name: deformable_component_assembly
   example: "industrialEI"
   status: unvalidated
+  python_version: null
   path: "examples/industrialEI/single_task_learning_bench/deformable_component_manipulation"
   readme_file: "examples/industrialEI/single_task_learning_bench/deformable_component_manipulation/README.md"
   benchmark_file: "examples/industrialEI/single_task_learning_bench/deformable_component_manipulation/benchmarkingjob.yaml"
@@ -308,6 +342,7 @@ examples:
 - name: llm_agent
   example: "llm-agent"
   status: unvalidated
+  python_version: null
   path: "examples/llm-agent/singletask_learning_bench"
   readme_file: "examples/llm-agent/singletask_learning_bench/README.md"
   benchmark_file: "examples/llm-agent/singletask_learning_bench/benchmarkingjob.yaml"
@@ -317,6 +352,7 @@ examples:
 - name: llama_cpp_single_task
   example: "llm-edge-benchmark-suite"
   status: unvalidated
+  python_version: null
   path: "examples/llm-edge-benchmark-suite/single_task_bench"
   readme_file: "examples/llm-edge-benchmark-suite/single_task_bench/README.md"
   benchmark_file: "examples/llm-edge-benchmark-suite/single_task_bench/benchmarkingjob.yaml"
@@ -326,6 +362,7 @@ examples:
 - name: llama_cpp_single_task_with_compression
   example: "llm-edge-benchmark-suite"
   status: unvalidated
+  python_version: null
   path: "examples/llm-edge-benchmark-suite/single_task_bench_with_compression"
   readme_file: "examples/llm-edge-benchmark-suite/single_task_bench_with_compression/README.md"
   benchmark_file: "examples/llm-edge-benchmark-suite/single_task_bench_with_compression/benchmarkingjob.yaml"
@@ -335,6 +372,7 @@ examples:
 - name: simple_qa_singletask_learning
   example: "llm_simple_qa"
   status: active
+  python_version: "3.8"
   path: "examples/llm_simple_qa"
   readme_file: "examples/llm_simple_qa/README.md"
   benchmark_file: "examples/llm_simple_qa/benchmarkingjob.yaml"
@@ -371,6 +409,7 @@ examples:
 - name: fpn_incremental_learning
   example: "pcb-aoi"
   status: unvalidated
+  python_version: null
   path: "examples/pcb-aoi/incremental_learning_bench/fault_detection"
   readme_file: null
   benchmark_file: "examples/pcb-aoi/incremental_learning_bench/fault_detection/benchmarkingjob.yaml"
@@ -380,6 +419,7 @@ examples:
 - name: fpn_singletask_learning
   example: "pcb-aoi"
   status: unvalidated
+  python_version: null
   path: "examples/pcb-aoi/singletask_learning_bench/fault_detection"
   readme_file: "examples/pcb-aoi/singletask_learning_bench/fault_detection/README.md"
   benchmark_file: "examples/pcb-aoi/singletask_learning_bench/fault_detection/benchmarkingjob.yaml"
@@ -389,6 +429,7 @@ examples:
 - name: physical_scene_generation
   example: "phys_scene_gen"
   status: unvalidated
+  python_version: null
   path: "examples/phys_scene_gen/singletask_learning_bench"
   readme_file: "examples/phys_scene_gen/singletask_learning_bench/readme.md"
   benchmark_file: "examples/phys_scene_gen/singletask_learning_bench/benchmarkingjob.yaml"
@@ -398,6 +439,7 @@ examples:
 - name: sam_rfnet_lifelong_learning
   example: "robot"
   status: unvalidated
+  python_version: null
   path: "examples/robot/lifelong_learning_bench/semantic-segmentation"
   readme_file: "examples/robot/lifelong_learning_bench/semantic-segmentation/README.md"
   benchmark_file: "examples/robot/lifelong_learning_bench/semantic-segmentation/benchmarkingjob-sam.yaml"
@@ -407,6 +449,7 @@ examples:
 - name: rfnet_lifelong_learning_simple
   example: "robot"
   status: unvalidated
+  python_version: null
   path: "examples/robot/lifelong_learning_bench/semantic-segmentation"
   readme_file: "examples/robot/lifelong_learning_bench/semantic-segmentation/README.md"
   benchmark_file: "examples/robot/lifelong_learning_bench/semantic-segmentation/benchmarkingjob-simple.yaml"
@@ -416,6 +459,7 @@ examples:
 - name: erfnet_lifelong_learning
   example: "robot-cityscapes-synthia"
   status: unvalidated
+  python_version: null
   path: "examples/robot-cityscapes-synthia/lifelong_learning_bench/semantic-segmentation"
   readme_file: "examples/robot-cityscapes-synthia/lifelong_learning_bench/semantic-segmentation/README.md"
   benchmark_file: "examples/robot-cityscapes-synthia/lifelong_learning_bench/semantic-segmentation/benchmarkingjob.yaml"
@@ -425,6 +469,7 @@ examples:
 - name: code_comment_generation
   example: "smart_coding"
   status: unvalidated
+  python_version: null
   path: "examples/smart_coding/smart_coding_learning_bench/comment"
   readme_file: null
   benchmark_file: "examples/smart_coding/smart_coding_learning_bench/comment/benchmarkingjob.yaml"
@@ -434,6 +479,7 @@ examples:
 - name: issue_response_generation
   example: "smart_coding"
   status: unvalidated
+  python_version: null
   path: "examples/smart_coding/smart_coding_learning_bench/issue"
   readme_file: null
   benchmark_file: "examples/smart_coding/smart_coding_learning_bench/issue/benchmarkingjob.yaml"
@@ -443,6 +489,7 @@ examples:
 - name: mmlab_model_boost
   example: "yaoba"
   status: unvalidated
+  python_version: null
   path: "examples/yaoba/singletask_learning_boost"
   readme_file: null
   benchmark_file: "examples/yaoba/singletask_learning_boost/benchmarkingjob.yaml"
@@ -452,6 +499,7 @@ examples:
 - name: mmlab_model_yolox_tta
   example: "yaoba"
   status: unvalidated
+  python_version: null
   path: "examples/yaoba/singletask_learning_yolox_tta"
   readme_file: null
   benchmark_file: "examples/yaoba/singletask_learning_yolox_tta/benchmarkingjob.yaml"

@@ -88,6 +88,7 @@ jobs:
       run_all: ${{ steps.check_examples.outputs.run_all }}
       examples_changed: ${{ steps.check_examples.outputs.examples_changed }}
       changed_examples: ${{ steps.check_examples.outputs.changed_examples }}
+      validation_matrix: ${{ steps.check_examples.outputs.validation_matrix }}
       changed_files: ${{ steps.check_examples.outputs.changed_files }}
       check_items: ${{ steps.check_examples.outputs.check_items }}
     steps:
@@ -117,8 +118,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        changed_example: ${{ fromJson(needs.detect-change-examples.outputs.changed_examples) }}
-    name: ${{ format('Base dynamic example validation ({0})', matrix.changed_example) }}
+        include: ${{ fromJson(needs.detect-change-examples.outputs.validation_matrix) }}
+    name: ${{ format('Base dynamic example validation ({0}, Python {1})', matrix.selector, matrix.python_version) }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -127,7 +128,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v7
         with:
-          python-version: '3.8'
+          python-version: ${{ matrix.python_version }}
 
       - name: Install validator dependencies
         run: python -m pip install -r .github/workflows/validator/requirements.txt
@@ -152,7 +153,7 @@ jobs:
         id: run_validation
         continue-on-error: true
         run: |
-          safe_name="$(printf '%s' "${{ matrix.changed_example }}" | tr -c 'A-Za-z0-9._-' '-')"
+          safe_name="$(printf '%s' "${{ matrix.selector }}" | tr -c 'A-Za-z0-9._-' '-')"
           result_file="${GITHUB_WORKSPACE}/baseline-results/${safe_name}.json"
           mkdir -p "${GITHUB_WORKSPACE}/baseline-results"
           echo "artifact_name=dynamic-validation-base-${safe_name}" >> "${GITHUB_OUTPUT}"
@@ -165,7 +166,7 @@ jobs:
               --pip-install \
               --prepare-env \
               --smoke \
-              --example "${{ matrix.changed_example }}" \
+              --example "${{ matrix.selector }}" \
               --inventory "${GITHUB_WORKSPACE}/.github/workflows/validator/data/example_inventory.yaml" \
               --format json \
               --report "${result_file}"
@@ -187,8 +188,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        changed_example: ${{ fromJson(needs.detect-change-examples.outputs.changed_examples) }}
-    name: ${{ format('PR dynamic example validation ({0})', matrix.changed_example) }}
+        include: ${{ fromJson(needs.detect-change-examples.outputs.validation_matrix) }}
+    name: ${{ format('PR dynamic example validation ({0}, Python {1})', matrix.selector, matrix.python_version) }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -197,7 +198,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v7
         with:
-          python-version: '3.8'
+          python-version: ${{ matrix.python_version }}
 
       - name: Install validator dependencies
         run: python -m pip install -r .github/workflows/validator/requirements.txt
@@ -212,7 +213,7 @@ jobs:
         id: run_validation
         continue-on-error: true
         run: |
-          safe_name="$(printf '%s' "${{ matrix.changed_example }}" | tr -c 'A-Za-z0-9._-' '-')"
+          safe_name="$(printf '%s' "${{ matrix.selector }}" | tr -c 'A-Za-z0-9._-' '-')"
           result_file="validation-results/${safe_name}.json"
           mkdir -p validation-results
           echo "artifact_name=dynamic-validation-pr-${safe_name}" >> "${GITHUB_OUTPUT}"
@@ -223,7 +224,7 @@ jobs:
             --pip-install \
             --prepare-env \
             --smoke \
-            --example "${{ matrix.changed_example }}" \
+            --example "${{ matrix.selector }}" \
             --inventory .github/workflows/validator/data/example_inventory.yaml \
             --format json \
             --report "${result_file}"
@@ -489,6 +490,7 @@ jobs:
     permissions: read-all
     outputs:
       examples: ${{ steps.select.outputs.changed_examples }}
+      validation_matrix: ${{ steps.select.outputs.validation_matrix }}
       examples_changed: ${{ steps.select.outputs.examples_changed }}
     steps:
       - uses: actions/checkout@v7
@@ -516,15 +518,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        example: ${{ fromJson(needs.select-tier3-examples.outputs.examples) }}
-    name: ${{ format('Tier 3 example validation ({0})', matrix.example) }}
+        include: ${{ fromJson(needs.select-tier3-examples.outputs.validation_matrix) }}
+    name: ${{ format('Tier 3 example validation ({0}, Python {1})', matrix.selector, matrix.python_version) }}
     steps:
       - uses: actions/checkout@v7
 
       - name: Setup Python
         uses: actions/setup-python@v7
         with:
-          python-version: '3.8'
+          python-version: ${{ matrix.python_version }}
 
       - name: Install validator dependencies
         run: python -m pip install -r .github/workflows/validator/requirements.txt
@@ -539,7 +541,7 @@ jobs:
         id: validation
         continue-on-error: true
         run: |
-          safe_name="$(printf '%s' "${{ matrix.example }}" | tr -c 'A-Za-z0-9._-' '-')"
+          safe_name="$(printf '%s' "${{ matrix.selector }}" | tr -c 'A-Za-z0-9._-' '-')"
           result_file="tier3-results/${safe_name}.json"
           mkdir -p tier3-results
           echo "artifact_name=tier3-validation-${safe_name}" >> "${GITHUB_OUTPUT}"
@@ -549,7 +551,7 @@ jobs:
             --pip-install \
             --prepare-env \
             --smoke \
-            --example "${{ matrix.example }}" \
+            --example "${{ matrix.selector }}" \
             --inventory .github/workflows/validator/data/example_inventory.yaml \
             --format json \
             --report "${result_file}"
