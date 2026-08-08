@@ -59,6 +59,7 @@ UNVALIDATED_REASON = "CI/CD ongoing"
 ONGOING_REASON = "Example ongoing"
 COMMENT_MARKER = "<!-- ianvs-example-validation-report -->"
 MAX_COMMENT_BODY_CHARS = 60000
+MAX_DYNAMIC_NEW_ERRORS = 10
 DEFAULT_RESULT_PATTERNS = ("validation-results", "validator-results")
 GITHUB_PULL_REQUEST_EVENTS = ("pull_request", "pull_request_target")
 GITHUB_API_VERSION = "2022-11-28"
@@ -1068,9 +1069,21 @@ def dynamic_regression_summary(
     comparisons: Sequence[object],
     examples: Sequence[str],
 ) -> List[str]:
+    new_error_count = count_regression_field(
+        comparisons,
+        "new_issue_count",
+        fallback_classification="Failed: PR regression",
+    )
     summary = [
         "",
         "## Regression Summary",
+        "",
+        "**Result:** {} — {}".format(
+            FAIL if new_error_count else PASS,
+            "New ERRORs were detected."
+            if new_error_count
+            else "No new ERRORs were detected.",
+        ),
         "",
         "| Example | Current errors | Pre-existing errors | New errors | Fixed errors |",
         "|---|---:|---:|---:|---:|",
@@ -1079,7 +1092,61 @@ def dynamic_regression_summary(
         summary.append(regression_error_summary_row(comparisons, example))
     if not examples:
         summary.append("| No regression comparisons were collected. | 0 | 0 | 0 | 0 |")
+
+    if new_error_count:
+        new_errors = dynamic_new_errors(comparisons, MAX_DYNAMIC_NEW_ERRORS)
+        summary.extend(
+            [
+                "",
+                "### New ERRORs ({} of {})".format(
+                    len(new_errors), new_error_count
+                ),
+                "",
+                "| Example | Check | ERROR |",
+                "|---|---|---|",
+            ]
+        )
+        for example, check, detail in new_errors:
+            summary.append(
+                "| `{}` | `{}` | {} |".format(
+                    escape_table(example),
+                    escape_table(check),
+                    escape_table(detail),
+                )
+            )
     return summary
+
+
+def dynamic_new_errors(
+    comparisons: Sequence[object],
+    limit: int,
+) -> List[Tuple[str, str, str]]:
+    errors = []
+    for comparison in comparisons:
+        if not isinstance(comparison, dict):
+            continue
+        new_error_count = count_regression_field(
+            [comparison],
+            "new_issue_count",
+            fallback_classification="Failed: PR regression",
+        )
+        if not new_error_count:
+            continue
+
+        raw_details = comparison.get("new_details")
+        if not isinstance(raw_details, list) or not raw_details:
+            raw_details = comparison.get("details")
+        details = string_list(raw_details)
+        if not details:
+            details = [str(comparison.get("message") or "New ERROR detected.")]
+
+        example = str(comparison.get("example") or "")
+        check = str(comparison.get("check") or "")
+        for detail in details[:new_error_count]:
+            errors.append((example, check, detail))
+            if len(errors) == limit:
+                return errors
+    return errors
 
 
 def regression_error_summary_row(
@@ -1158,6 +1225,11 @@ def append_collected_result_files(rendered: str, source_files: Sequence[str]) ->
     lines = [
         "",
         "## Collected Result Files",
+        "",
+        (
+            "The following files contain the validation output for the checked "
+            "Example benchmark YAML files."
+        ),
         "",
     ]
     for source_file in source_files:
