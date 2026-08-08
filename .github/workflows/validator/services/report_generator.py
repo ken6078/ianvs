@@ -450,7 +450,10 @@ def render_full_report(
     mode: str = MODE_DYNAMIC,
     regression_json: str = "",
 ) -> str:
-    rendered = render_markdown(report, mode=mode)
+    if mode == MODE_DYNAMIC:
+        rendered = render_dynamic_markdown(report, include_skipped_examples=False)
+    else:
+        rendered = render_markdown(report, mode=mode)
     if regression_json:
         rendered = append_regression_summary(
             rendered,
@@ -460,7 +463,10 @@ def render_full_report(
             if mode == MODE_DYNAMIC
             else (),
         )
-    return append_collected_result_files(rendered, report.source_files)
+    rendered = append_collected_result_files(rendered, report.source_files)
+    if mode == MODE_DYNAMIC:
+        rendered = append_dynamic_skipped_examples(rendered, report)
+    return rendered
 
 
 def publish_report(
@@ -851,7 +857,10 @@ def render_static_markdown(report: CombinedReport) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def render_dynamic_markdown(report: CombinedReport) -> str:
+def render_dynamic_markdown(
+    report: CombinedReport,
+    include_skipped_examples: bool = True,
+) -> str:
     skipped_examples = dynamic_skipped_examples(report)
     runnable_examples = [
         example for example in report.examples if example.path not in skipped_examples
@@ -901,20 +910,30 @@ def render_dynamic_markdown(report: CombinedReport) -> str:
                 )
             )
 
-    if skipped_examples:
-        lines.extend(
-            [
-                "",
-                "## Skipped Examples",
-                "",
-                "| Example | Reason |",
-                "|---|---|",
-            ]
-        )
-        for example_path, reason in sorted(skipped_examples.items()):
-            lines.append("| `{}` | {} |".format(escape_table(example_path), reason))
+    rendered = "\n".join(lines).rstrip() + "\n"
+    if include_skipped_examples:
+        return append_dynamic_skipped_examples(rendered, report)
+    return rendered
 
-    return "\n".join(lines).rstrip() + "\n"
+
+def append_dynamic_skipped_examples(
+    rendered: str,
+    report: CombinedReport,
+) -> str:
+    skipped_examples = dynamic_skipped_examples(report)
+    if not skipped_examples:
+        return rendered
+
+    lines = [
+        "",
+        "## Skipped Examples",
+        "",
+        "| Example | Reason |",
+        "|---|---|",
+    ]
+    for example_path, reason in sorted(skipped_examples.items()):
+        lines.append("| `{}` | {} |".format(escape_table(example_path), reason))
+    return rendered.rstrip() + "\n" + "\n".join(lines).rstrip() + "\n"
 
 
 def dynamic_skipped_examples(report: CombinedReport) -> Dict[str, str]:
