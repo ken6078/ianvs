@@ -17,10 +17,11 @@ on:
       - '.github/workflows/dynamic_code_cicd.yaml'
   schedule:
     - cron: '31 15 * * *'
+  workflow_dispatch:
 
 jobs:
   plan-scheduled-validation:
-    if: ${{ github.event_name == 'schedule' || github.event_name == 'push' }}
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'push' }}
     runs-on: ubuntu-latest
     permissions:
       actions: read
