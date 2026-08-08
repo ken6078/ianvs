@@ -333,18 +333,14 @@ def load_tier2_health_artifacts(repository: str, token: str) -> List[dict]:
 
 def select_pending_tier2_artifact(
     artifacts: Sequence[dict],
-    now: datetime,
     health_record: Optional[dict],
 ) -> Optional[dict]:
-    """Select the latest unpublished Tier 2 artifact completed before today.
+    """Select the latest unpublished Tier 2 artifact.
 
-    Normally this is yesterday's Tier 2 result. Looking back to the README
-    timestamp also lets the next daily run recover when publication itself had
-    an infrastructure failure.
+    Looking back to the published health timestamp lets any run recover when publication itself had an infrastructure
+    failure.
     """
 
-    current = now.astimezone(timezone.utc)
-    today = current.replace(hour=0, minute=0, second=0, microsecond=0)
     last_validated_at = health_record["validated_at"] if health_record else None
     published_run_id = health_record["source_run_id"] if health_record else 0
     candidates = []
@@ -357,7 +353,7 @@ def select_pending_tier2_artifact(
             run_id = int((artifact.get("workflow_run") or {})["id"])
         except (KeyError, TypeError, ValueError):
             continue
-        if created_at >= today or run_id == published_run_id:
+        if run_id == published_run_id:
             continue
         if last_validated_at and created_at <= last_validated_at:
             continue
@@ -593,7 +589,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             )
             tier2_artifact = select_pending_tier2_artifact(
                 load_tier2_health_artifacts(args.repository, args.token),
-                now,
                 health_record,
             )
             plan = scheduled_validation_plan(
