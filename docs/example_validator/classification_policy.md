@@ -27,6 +27,21 @@ Only newly introduced `FAIL` or `ERROR` details make the regression job fail. Wa
 
 If a base report is missing or otherwise cannot be compared reliably, maintainers should inspect the raw artifacts instead of assuming the head failure is historical.
 
+### Design decision: do not share cached PR baselines
+
+The project considered storing one T2 base result and sharing it across pull requests to reduce repeated CI work. This was rejected because the same main-branch commit can produce different results after a dependency, dataset, model, API, network condition, or runner image changes.
+
+For example:
+
+```text
+cached base: PASS
+external dependency changes
+current PR head: FAIL
+wrong result: PR regression
+```
+
+CI therefore reruns base and head in the same validation window. T2 base results may still be reused for health publication and T3 scheduling, but not for later PR regression comparisons. Package or download caches are allowed because they cache inputs rather than old validation outcomes.
+
 ## Failure causes
 
 The reporter assigns a cause from the failed check and its diagnostics. Supported cause labels include:
@@ -39,6 +54,8 @@ The reporter assigns a cause from the failed check and its diagnostics. Supporte
 - `Failed: Known issue`
 
 Cause and PR ownership are independent. For example, a dependency failure can be a new PR regression, pre-existing debt, or a time-based maintenance failure.
+
+Warnings are also compared as pre-existing, new, and fixed details, but their PR-impact classification remains passing. Reviewers should ask for reasonable warning fixes during normal review; an accepted warning should have a clear reason or follow-up issue rather than disappearing from the report.
 
 ## Time-based failures
 
@@ -68,6 +85,8 @@ The inventory uses machine-friendly values that the health report maps to displa
 | `broken` | `Broken` | Broad validation confirms an unhandled failure |
 
 An active entry is displayed as `Broken` when its published T2/T3 result contains a blocking failure. Passing an individual T0 or T1 run does not by itself establish repository-wide `Runnable` status.
+
+Classification is maintained at benchmark-job/YAML level even when the public matrix visually groups rows under one top-level example. If one example has multiple benchmarking YAML files, each one needs its own inventory entry and result so a passing job cannot hide a failing sibling.
 
 ## Status update policy
 

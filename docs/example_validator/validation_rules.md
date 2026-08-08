@@ -35,6 +35,8 @@ Every benchmark unit is represented by an inventory entry. An entry should decla
 - optional ordered `prepare_env.steps`;
 - optional Mock LLM runtime paths.
 
+The validation unit is a benchmark job, normally identified by one benchmarking YAML file. A top-level example may therefore have several inventory entries and several matrix rows. Do not collapse multiple jobs into one result merely because they share an example directory: their configurations and health can differ.
+
 Dynamic validation only runs entries whose inventory status is `active`. Static validation may inspect explicitly selected inactive entries so maintainers can triage them.
 
 ## Static validation
@@ -54,6 +56,24 @@ Static checks do not execute the example. They inspect the entry, YAML, and Pyth
 | Metric safety | Metrics that divide by a collection length should guard an empty collection. | `WARNING`; `SKIP` when no metric file exists |
 
 The current static scanner covers `.py`, `.yaml`, and `.yml` files. README requirements in the proposal remain a review requirement until Markdown-specific checks are implemented.
+
+### Why a check is an error or a warning
+
+The primary boundary is whether the detected condition is sufficient to prevent the configured validation path from running:
+
+- use `ERROR` or `FAIL` for a missing required file, invalid configuration, failed preparation/install command, failed runtime, or another condition that directly prevents execution;
+- use `WARNING` for a portability, maintainability, security, or heuristic finding that may still allow execution;
+- do not promote a heuristic to an error merely because the pattern is undesirable. A false positive must not block a pull request.
+
+Warnings should normally be addressed during review. If a change is urgent and the example remains runnable, maintainers may accept a warning with a follow-up issue. The report must still retain the warning and its consequence.
+
+| Warning | Why it matters | Expected response |
+| --- | --- | --- |
+| Missing non-code path parent | A dataset or generated resource may not have been prepared yet. | Confirm the preparation contract or document an external resource. |
+| Hardcoded local path | The example may work only on the contributor's machine. | Use a repository-relative path, portable default, or explicit override. |
+| Local model path | The example may be non-portable and can encourage committing large model weights. | Use a model ID or configurable local override; do not commit weights. |
+| CUDA-only pattern | CPU runners may fail, but a regex can miss or misread nearby fallback logic. | Verify CUDA/MPS/CPU selection and treat a confirmed fallback as a false positive. |
+| Metric empty-pair pattern | Empty results may cause division by zero, but the static pattern is heuristic. | Add an explicit empty-pair result such as `0.0`; a reproduced crash is a runtime `FAIL`. |
 
 ### Environment preparation contract
 
@@ -132,6 +152,22 @@ For an inventory entry with Mock LLM enabled, the smoke subprocess receives `IAN
 
 A mocked run proves that the unchanged inference integration and benchmark flow execute with deterministic substitute responses. It does not prove model quality, model availability, provider availability, network access, GPU behavior, or benchmark accuracy.
 
+Examples that require an external API key and do not have a supported Mock Runtime cannot run a meaningful credential-free smoke test. Classify that limitation explicitly; do not publish a real-provider passing status from a substituted response.
+
+## Validation reports
+
+Human-readable reports are summaries of structured JSON results. Diagnostics use the form:
+
+```text
+path/to/file -> (Line 31): offending value
+```
+
+The file and line identify where maintainers should look; the value and message explain what triggered the check and why it matters. Regression details show at most the first ten diagnostics in Markdown and report how many more exist. Use the JSON artifact when the summary is truncated.
+
+The regression summary separates current, pre-existing, new, and fixed issues. A heading such as `Collected Result Files` refers to validator JSON artifacts for selected inventory benchmark jobs/YAML files. It does not mean that one result is generated for every source file changed by the contributor.
+
+Direct base and PR validation jobs preserve their result artifacts even when an individual validator exits non-zero. This is intentional: the regression comparison is the job that decides whether a newly introduced blocking issue fails the pull request.
+
 ## CI coverage
 
 The repository uses these validation levels:
@@ -141,6 +177,8 @@ The repository uses these validation levels:
 | T0 | Changed inventory examples | Static checks |
 | T1 | Example changed by a pull request | Dependencies, preparation, and smoke validation for that example |
 | T2 | Shared `core/` or workflow/validator changes | Dynamic validation for all active inventory targets |
-| T3 | Periodic or post-merge broad run | Dynamic validation for all active inventory targets and health snapshot publication |
+| T3 | Scheduled or main-branch broad run | Dynamic validation for all active inventory targets and health snapshot publication |
 
 The static workflow currently triggers for changed example Python or YAML files. The dynamic workflow triggers for changes below `examples/`, `core/`, the validator, or its workflow. Scheduled planning runs daily and uses a seven-day broad-validation cadence. Generated reports and status snapshots are the evidence for classification; a passing mocked check must retain its `mocked_llm` label.
+
+T0 intentionally focuses on inexpensive code/configuration checks for the changed example. Documentation-only change detection, Markdown-specific validation, deeper parsing of GPU declarations such as runtime configuration fields, and broader static semantic analysis are future extensions. T2/T3 status must be based on dynamic evidence rather than inferred from a T0 pass.

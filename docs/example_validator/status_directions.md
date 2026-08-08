@@ -37,8 +37,8 @@ Other report-level reasons, including hardware assumptions and metric edge cases
 
 ## How to interpret the matrix
 
-- Each example normally has one primary display status.
-- The displayed status is grouped at the top-level example, while the inventory and reports identify individual benchmark units.
+- Each benchmark job/YAML is an independent inventory and validation unit, even when rows are visually grouped under one top-level example.
+- The current published badge snapshot is aggregated by the top-level `example` value. If any validated benchmark job in that group has a blocking failure, the shared badge is `Broken`; inspect the report to identify the failing job. A future per-job snapshot format may expose the independent results directly in the matrix.
 - `Last T2/T3 Validation Time` is the timestamp of the latest published broad evidence, not the time of the last README edit.
 - T0/T1 results help review a pull request but do not replace T2/T3 health evidence.
 - `Runnable` means the validated path passed the checks in its configured tier. It is not a guarantee for every operating system, hardware combination, external resource, or undeclared Python version.
@@ -51,6 +51,10 @@ Other report-level reasons, including hardware assumptions and metric edge cases
 T2/T3 workflows generate per-example JSON snapshots and a summary, then publish them to the `example-status` branch. `examples/README.md` renders badges from those snapshots. The snapshot includes the example identifier, current result, validation timestamp, and source commit.
 
 If a badge and a workflow report disagree, prefer the newest complete T2/T3 report, verify that snapshot publication succeeded, and then refresh or repair the status branch. Do not manually claim a passing status without matching validation evidence.
+
+A full T2 pull-request run produces broad **base-branch** health evidence. That evidence may be published on the next scheduled planning run even if the pull request is still open or is never merged, because it validated the current main-branch target set. Publishing it resets the seven-day T3 cadence from the T2 validation time. The PR-head result remains PR review evidence and must not replace main-branch health.
+
+A later complete T3 run supersedes older T2 evidence. This latest-complete-result rule is important because an example can drift after a passing T2 without any repository change—for example, when a dependency, dataset, model, API, or runner environment changes.
 
 ## Maintainer actions
 

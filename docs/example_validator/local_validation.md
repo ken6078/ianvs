@@ -118,6 +118,8 @@ python .github/workflows/validator/services/inventory_loader.py \
 
 Static detection considers changed `.py`, `.yaml`, and `.yml` files below inventory example paths. Dynamic detection selects changed examples and selects every active entry when `core/` or `.github/workflows/` changes.
 
+The merge-base-to-`HEAD` range answers which files belong to the contributor's change. The rebased validation branch answers a different question: whether those changes work with the latest upstream validation rules and shared core code. Both are needed—use the original merge-base range for ownership and the rebased state for execution.
+
 ## Validate against current upstream
 
 The proposal defines a future local wrapper that creates and cleans up a temporary rebased validation branch. That wrapper is not present in the repository yet. Until it is implemented, update and test a disposable branch manually:
@@ -170,4 +172,5 @@ The VS Code `github-local-actions` extension can provide a UI for the same `act`
 - **Dataset file missing:** run `--prepare-env` before `--jsonl` or `--smoke`, and confirm the inventory dataset layout.
 - **Mock Runtime not loaded:** confirm both Mock Runtime directories exist and that the example fixture declares a supported adapter.
 - **Dependency installation polluted the environment:** recreate the disposable virtual environment; do not use `--pip-install` in a shared environment.
+- **The VS Code workflow view shows raw `${{ ... }}` expressions:** local-action UIs may display the YAML expression instead of its resolved value even when `act` resolves it during execution; verify the job log and command output.
 - **Local action differs from CI:** inspect the uploaded JSON/Markdown artifacts in GitHub Actions and reproduce the underlying `validation_runner.py` command directly.
