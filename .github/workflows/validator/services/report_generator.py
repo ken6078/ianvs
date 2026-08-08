@@ -263,6 +263,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             snapshots,
             {
                 "validated_at": str(metadata["validated_at"]),
+                "validated_at_display": format_validation_time(
+                    str(metadata["validated_at"])
+                ),
                 "commit": str(metadata["source_sha"]),
             },
             Path(args.example_status_output),
@@ -500,6 +503,10 @@ def parse_utc(value: str) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
+def format_validation_time(value: str) -> str:
+    return parse_utc(value).strftime("%Y-%m-%d %H:%M UTC")
+
+
 def render_example_health_readme(
     inventory_examples: Sequence[dict],
     report: CombinedReport,
@@ -517,7 +524,9 @@ def render_example_health_readme(
     ]
     lines.append(
         "**Last T2/T3 Validation Time:** {}".format(
-            dynamic_json_badge("validated at", "summary.json", "$.validated_at")
+            dynamic_json_badge(
+                "validated at", "summary.json", "$.validated_at_display"
+            )
         )
     )
 
@@ -579,8 +588,8 @@ def render_example_health_readme(
                 [
                     "      <td>{}</td>".format(benchmark_link),
                     "      <td>{}</td>".format(
-                        dynamic_json_badge(
-                            "status", status_file_name(example_name), "$.status"
+                        endpoint_json_badge(
+                            "status", status_file_name(example_name)
                         )
                     ),
                     "    </tr>",
@@ -605,6 +614,7 @@ def create_example_status_snapshots(
     commit: str,
 ) -> Dict[str, dict]:
     result_by_identity = {example.identity: example for example in report.examples}
+    grouped_inventory: Dict[str, List[dict]] = {}
     grouped_results: Dict[str, List[ExampleResult]] = {}
 
     for inventory_example in inventory_examples:
@@ -613,6 +623,7 @@ def create_example_status_snapshots(
             or inventory_example.get("name")
             or inventory_example.get("path", "")
         )
+        grouped_inventory.setdefault(example, []).append(inventory_example)
         name = str(inventory_example.get("name", ""))
         path = str(inventory_example.get("path", "")).rstrip("/")
         result = result_by_identity.get((name, path))
@@ -620,16 +631,33 @@ def create_example_status_snapshots(
             grouped_results.setdefault(example, []).append(result)
 
     snapshots = {}
-    for example, results in grouped_results.items():
+    for example, inventory_group in grouped_inventory.items():
+        results = grouped_results.get(example, [])
+        has_failure = any(result.has_blocking_errors for result in results)
+        inventory_statuses = {
+            str(item.get("status", "active")).lower() for item in inventory_group
+        }
+        if has_failure:
+            status = "failing"
+            message = STATUS_BROKEN
+        elif "ongoing" in inventory_statuses:
+            status = STATUS_EXAMPLE_ONGOING
+            message = STATUS_EXAMPLE_ONGOING
+        elif "unvalidated" in inventory_statuses or not results:
+            status = STATUS_CICD_ONGOING
+            message = STATUS_CICD_ONGOING
+        else:
+            status = "passing"
+            message = STATUS_RUNNABLE
         snapshots[status_file_name(example)] = {
             "example": example,
-            "status": (
-                "failing"
-                if any(result.has_blocking_errors for result in results)
-                else "passing"
-            ),
+            "status": status,
             "validated_at": validated_at,
             "commit": commit,
+            "schemaVersion": 1,
+            "label": "status",
+            "message": message,
+            "color": STATUS_COLORS[message],
         }
     return snapshots
 
@@ -662,6 +690,18 @@ def dynamic_json_badge(label: str, filename: str, query: str) -> str:
                 "cacheSeconds": "300",
             }
         )
+    )
+    return '<img alt="{}" src="{}">'.format(
+        html.escape(label, quote=True), html.escape(badge_url, quote=True)
+    )
+
+
+def endpoint_json_badge(label: str, filename: str) -> str:
+    raw_url = "https://raw.githubusercontent.com/{}/{}/{}/{}".format(
+        STATUS_REPOSITORY, STATUS_BRANCH, STATUS_RESULT_ROOT, filename
+    )
+    badge_url = "https://img.shields.io/endpoint?{}".format(
+        urlencode({"url": raw_url, "cacheSeconds": "300"})
     )
     return '<img alt="{}" src="{}">'.format(
         html.escape(label, quote=True), html.escape(badge_url, quote=True)
