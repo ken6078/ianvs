@@ -60,6 +60,8 @@ ONGOING_REASON = "Example ongoing"
 COMMENT_MARKER = "<!-- ianvs-example-validation-report -->"
 MAX_COMMENT_BODY_CHARS = 60000
 MAX_DYNAMIC_NEW_ERRORS = 10
+MAX_DYNAMIC_NEW_WARNINGS = 10
+RUNTIME_SMOKE_TEST_PREFIX = "Runtime smoke test"
 DEFAULT_RESULT_PATTERNS = ("validation-results", "validator-results")
 GITHUB_PULL_REQUEST_EVENTS = ("pull_request", "pull_request_target")
 GITHUB_API_VERSION = "2022-11-28"
@@ -118,6 +120,11 @@ class CheckResult:
 
     @property
     def issue_count(self) -> int:
+        if (
+            self.status in BLOCKING_STATUSES
+            and self.name.startswith(RUNTIME_SMOKE_TEST_PREFIX)
+        ):
+            return 1
         return len(self.details) if self.details else 1
 
 
@@ -1074,6 +1081,10 @@ def dynamic_regression_summary(
         "new_issue_count",
         fallback_classification="Failed: PR regression",
     )
+    new_warning_count = count_regression_field(
+        comparisons,
+        "new_warning_count",
+    )
     summary = [
         "",
         "## Regression Summary",
@@ -1114,6 +1125,29 @@ def dynamic_regression_summary(
                     escape_table(detail),
                 )
             )
+    if new_warning_count:
+        new_warnings = dynamic_new_warnings(
+            comparisons, MAX_DYNAMIC_NEW_WARNINGS
+        )
+        summary.extend(
+            [
+                "",
+                "### New warnings ({} of {})".format(
+                    len(new_warnings), new_warning_count
+                ),
+                "",
+                "| Example | Check | Warning |",
+                "|---|---|---|",
+            ]
+        )
+        for example, check, detail in new_warnings:
+            summary.append(
+                "| `{}` | `{}` | {} |".format(
+                    escape_table(example),
+                    escape_table(check),
+                    escape_table(detail),
+                )
+            )
     return summary
 
 
@@ -1147,6 +1181,34 @@ def dynamic_new_errors(
             if len(errors) == limit:
                 return errors
     return errors
+
+
+def dynamic_new_warnings(
+    comparisons: Sequence[object],
+    limit: int,
+) -> List[Tuple[str, str, str]]:
+    warnings = []
+    for comparison in comparisons:
+        if not isinstance(comparison, dict):
+            continue
+        new_warning_count = count_regression_field(
+            [comparison],
+            "new_warning_count",
+        )
+        if not new_warning_count:
+            continue
+
+        details = string_list(comparison.get("new_warning_details"))
+        if not details:
+            details = [str(comparison.get("message") or "New warning detected.")]
+
+        example = str(comparison.get("example") or "")
+        check = str(comparison.get("check") or "")
+        for detail in details[:new_warning_count]:
+            warnings.append((example, check, detail))
+            if len(warnings) == limit:
+                return warnings
+    return warnings
 
 
 def regression_error_summary_row(

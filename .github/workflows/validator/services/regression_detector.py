@@ -55,12 +55,16 @@ MAX_COMMENT_BODY_CHARS = 60000
 GITHUB_PULL_REQUEST_EVENTS = ("pull_request", "pull_request_target")
 GITHUB_API_VERSION = "2022-11-28"
 GITHUB_USER_AGENT = "ianvs-example-validator"
+RUNTIME_SMOKE_TEST_PREFIX = "Runtime smoke test"
 DETAIL_LOCATION_RE = re.compile(
     r"^(?P<file>.+?)\s+->\s+\(Line\s+(?P<line>\d+)\):\s*(?P<message>.*)$"
 )
 DIFF_HUNK_RE = re.compile(
     r"^@@ -(?P<old_start>\d+)(?:,(?P<old_count>\d+))? "
     r"\+(?P<new_start>\d+)(?:,(?P<new_count>\d+))? @@"
+)
+PYTHON_EXCEPTION_RE = re.compile(
+    r"^[A-Za-z_][A-Za-z0-9_.]*(?:Error|Exception):\s+.+$"
 )
 
 
@@ -81,6 +85,8 @@ class CheckResult:
     def issue_count(self) -> int:
         if self.status not in BLOCKING_STATUSES:
             return 0
+        if self.name.startswith(RUNTIME_SMOKE_TEST_PREFIX):
+            return 1
         return len(self.details) if self.details else 1
 
 
@@ -677,6 +683,17 @@ def error_issue_map(check: Optional[CheckResult]) -> Dict[Tuple[str, str, str, s
     if not check or check.status not in BLOCKING_STATUSES:
         return {}
 
+    if check.name.startswith(RUNTIME_SMOKE_TEST_PREFIX):
+        detail = runtime_smoke_error_detail(check)
+        identity = (check.example, check.name, "", detail)
+        return {
+            identity: ErrorIssue(
+                identity=identity,
+                file=check.file,
+                detail=detail,
+            )
+        }
+
     if check.details:
         return {
             (check.example, check.name, check.file, detail): ErrorIssue(
@@ -694,6 +711,17 @@ def error_issue_map(check: Optional[CheckResult]) -> Dict[Tuple[str, str, str, s
     detail = check.message or check.name
     identity = (check.example, check.name, "", detail)
     return {identity: ErrorIssue(identity=identity, detail=detail)}
+
+
+def runtime_smoke_error_detail(check: CheckResult) -> str:
+    for detail in check.details:
+        normalized = detail.strip()
+        if PYTHON_EXCEPTION_RE.match(normalized):
+            return normalized
+    return check.message or next(
+        (detail.strip() for detail in reversed(check.details) if detail.strip()),
+        check.name,
+    )
 
 
 def warning_issue_map(check: Optional[CheckResult]) -> Dict[Tuple[str, str, str, str], ErrorIssue]:
