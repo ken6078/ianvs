@@ -939,6 +939,32 @@ def render_static_markdown(report: CombinedReport) -> str:
             )
         )
 
+    detected_issues = [
+        (example, check)
+        for example in report.examples
+        for check in example.checks
+        if check.status in (ERROR, WARNING)
+    ]
+    if detected_issues:
+        lines.extend(
+            [
+                "",
+                "## Detected Issues",
+                "",
+                "| Example | Severity | Check | Problem and impact |",
+                "|---|---:|---|---|",
+            ]
+        )
+        for example, check in detected_issues:
+            lines.append(
+                "| `{}` | {} | `{}` | {} |".format(
+                    escape_table(example.path),
+                    check.status,
+                    escape_table(check.name),
+                    escape_table(check.message),
+                )
+            )
+
     return "\n".join(lines).rstrip() + "\n"
 
 

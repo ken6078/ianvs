@@ -185,7 +185,10 @@ def _check_prepare_env_contract(
         report,
         name="Environment preparation contract",
         issues=issues,
-        fail_message="The prepare_env contract is invalid.",
+        fail_message=(
+            "The prepare_env contract is invalid. Impact: automated environment "
+            "setup may fail before validation starts."
+        ),
         pass_message="The prepare_env contract and scripts are valid.",
     )
 
@@ -216,7 +219,10 @@ def _check_mock_runtime_contract(
         report,
         name="Mock LLM runtime contract",
         issues=issues,
-        fail_message="The Mock LLM runtime metadata is invalid.",
+        fail_message=(
+            "The Mock LLM runtime metadata is invalid. Impact: offline runtime "
+            "smoke validation may fail to start."
+        ),
         pass_message="The Mock LLM runtime paths are valid.",
     )
 
@@ -318,7 +324,14 @@ def _check_path_exists(
         name=name,
         status=PASS if exists else ERROR,
         file=repo_path,
-        message="Required path exists." if exists else "Required path is missing.",
+        message=(
+            "Required path exists."
+            if exists
+            else (
+                "Required path is missing. Impact: the example cannot be validated "
+                "or executed from a clean checkout."
+            )
+        ),
         details=details,
     )
 
@@ -347,7 +360,10 @@ def _check_yaml_syntax(report: ExampleReport, files: Sequence[Path]) -> None:
         report,
         name="YAML syntax",
         issues=failures,
-        fail_message="Invalid YAML syntax found.",
+        fail_message=(
+            "Invalid YAML syntax found. Impact: Ianvs cannot parse the affected "
+            "configuration."
+        ),
         pass_message="All YAML files parsed successfully.",
         failure_status=ERROR,
     )
@@ -388,7 +404,10 @@ def _check_repo_path_references(
         report,
         name="Repository path references exist",
         issues=sorted(set(missing_code_or_config)),
-        fail_message="Broken repository-local Python/YAML path references found.",
+        fail_message=(
+            "Broken repository-local Python/YAML path references found. Impact: "
+            "Python modules or YAML configurations may fail to load."
+        ),
         pass_message="Repository-local Python/YAML path references resolve.",
         failure_status=ERROR,
     )
@@ -396,7 +415,10 @@ def _check_repo_path_references(
         report,
         name="Repository path parent references exist",
         issues=sorted(set(missing_parent_references)),
-        fail_message="Repository-local non-code path references have missing parent folders.",
+        fail_message=(
+            "Repository-local non-code path references have missing parent folders. "
+            "Impact: datasets or resources may not be created or resolved correctly."
+        ),
         pass_message="Repository-local non-code path reference parent folders resolve.",
         failure_status=WARNING,
     )
@@ -412,7 +434,10 @@ def _check_hardcoded_paths(
         report,
         name="Hardcoded local path check",
         issues=matches,
-        fail_message="Contributor-specific absolute paths were found.",
+        fail_message=(
+            "Contributor-specific absolute paths were found. Impact: the example "
+            "may work only on the contributor's machine."
+        ),
         pass_message="No contributor-specific absolute paths found.",
         failure_status=WARNING,
     )
@@ -428,7 +453,10 @@ def _check_local_model_paths(
         report,
         name="Local model path check",
         issues=matches,
-        fail_message="Local-only model path references were found.",
+        fail_message=(
+            "Local-only model path references were found. Impact: clean CI runners "
+            "and other developers may not be able to load the model."
+        ),
         pass_message="No local-only model paths found.",
         failure_status=WARNING,
     )
@@ -462,7 +490,10 @@ def _check_cuda_only_assumptions(
         report,
         name="CUDA-only device check",
         issues=failures,
-        fail_message="CUDA-only device assumptions were found.",
+        fail_message=(
+            "CUDA-only device assumptions were found. Impact: the example may fail "
+            "on runners without a CUDA-capable GPU."
+        ),
         pass_message="No CUDA-only device assumptions found.",
         failure_status=WARNING,
     )
@@ -503,7 +534,10 @@ def _check_metric_empty_pair_guard(report: ExampleReport, repo_root: Path, examp
         report,
         name="Metric empty-pair guard",
         issues=risky,
-        fail_message="Metric division may crash on empty prediction-answer pairs.",
+        fail_message=(
+            "Metric division may crash on empty prediction-answer pairs. Impact: "
+            "evaluation may raise a division-by-zero error when no pairs are available."
+        ),
         pass_message="Metric files include an empty-pair guard or do not divide by a collection length.",
         pass_details=guarded,
         failure_status=WARNING,
