@@ -1,0 +1,10 @@
+{
+  "color": "brightgreen",
+  "commit": "59d66e2fe821480f9405736a11fb0ebe1bdf8c56",
+  "example": "llm_simple_qa",
+  "label": "status",
+  "message": "Runnable",
+  "schemaVersion": 1,
+  "status": "passing",
+  "validated_at": "2026-08-14T23:49:54.729920Z"
+}
