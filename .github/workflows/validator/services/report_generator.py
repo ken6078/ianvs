@@ -62,6 +62,9 @@ MAX_COMMENT_BODY_CHARS = 60000
 MAX_DYNAMIC_NEW_ERRORS = 10
 MAX_DYNAMIC_NEW_WARNINGS = 10
 RUNTIME_SMOKE_TEST_PREFIX = "Runtime smoke test"
+RUNTIME_ERROR_REPORT_MESSAGE = (
+    "The automated validation run stopped because of a runtime error."
+)
 DEFAULT_RESULT_PATTERNS = ("validation-results", "validator-results")
 GITHUB_PULL_REQUEST_EVENTS = ("pull_request", "pull_request_target")
 GITHUB_API_VERSION = "2022-11-28"
@@ -198,6 +201,11 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Optional regression detector JSON output to include as a summary section.",
     )
     parser.add_argument(
+        "--artifacts-json",
+        default="",
+        help="Optional GitHub Actions run artifacts JSON used for runtime log links.",
+    )
+    parser.add_argument(
         "--step-summary",
         action="store_true",
         help="Append the Markdown report to GITHUB_STEP_SUMMARY when available.",
@@ -253,10 +261,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 2
 
     report = load_combined_report(result_paths)
+    runtime_artifact_links = load_runtime_artifact_links(
+        args.artifacts_json,
+        result_paths,
+    )
     rendered = render_full_report(
         report,
         mode=args.mode,
         regression_json=args.regression_json,
+        runtime_artifact_links=runtime_artifact_links,
     )
     publish_report(rendered, report, args, mode=args.mode)
     if args.example_health_readme:
@@ -348,6 +361,68 @@ def load_combined_report(paths: Sequence[Path]) -> CombinedReport:
         examples=examples,
         source_files=[path.as_posix() for path in paths],
     )
+
+
+def load_runtime_artifact_links(
+    artifacts_json: str,
+    result_paths: Sequence[Path],
+) -> Dict[str, str]:
+    artifacts_path = Path(artifacts_json)
+    server_url = os.environ.get("GITHUB_SERVER_URL", "").rstrip("/")
+    repository = os.environ.get("GITHUB_REPOSITORY", "").strip("/")
+    run_id = os.environ.get("GITHUB_RUN_ID", "").strip()
+    if (
+        not artifacts_json
+        or not artifacts_path.is_file()
+        or not server_url
+        or not repository
+        or not run_id
+    ):
+        return {}
+
+    try:
+        payload = json.loads(artifacts_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    pages = payload if isinstance(payload, list) else [payload]
+    artifact_urls = {}
+    for page in pages:
+        if not isinstance(page, dict):
+            continue
+        artifacts = page.get("artifacts", [])
+        if not isinstance(artifacts, list):
+            continue
+        for artifact in artifacts:
+            if not isinstance(artifact, dict) or artifact.get("expired"):
+                continue
+            name = str(artifact.get("name") or "")
+            artifact_id = str(artifact.get("id") or "")
+            if not name or not artifact_id:
+                continue
+            artifact_urls[name] = "{}/{}/actions/runs/{}/artifacts/{}".format(
+                server_url,
+                repository,
+                run_id,
+                artifact_id,
+            )
+
+    links = {}
+    for result_path in result_paths:
+        artifact_name = "dynamic-validation-pr-{}".format(result_path.stem)
+        artifact_url = artifact_urls.get(artifact_name)
+        if not artifact_url:
+            continue
+        result_payload = json.loads(result_path.read_text(encoding="utf-8"))
+        raw_examples = result_payload.get("examples", [])
+        if not isinstance(raw_examples, list):
+            continue
+        for raw_example in raw_examples:
+            if not isinstance(raw_example, dict):
+                continue
+            example = str(raw_example.get("path") or raw_example.get("name") or "")
+            if example:
+                links[example] = artifact_url
+    return links
 
 
 def merge_duplicate_examples(examples: Sequence[ExampleResult]) -> List[ExampleResult]:
@@ -457,6 +532,7 @@ def render_full_report(
     report: CombinedReport,
     mode: str = MODE_DYNAMIC,
     regression_json: str = "",
+    runtime_artifact_links: Optional[Dict[str, str]] = None,
 ) -> str:
     if mode == MODE_DYNAMIC:
         rendered = render_dynamic_markdown(report, include_skipped_examples=False)
@@ -470,6 +546,7 @@ def render_full_report(
             excluded_examples=dynamic_skipped_example_paths(report)
             if mode == MODE_DYNAMIC
             else (),
+            runtime_artifact_links=runtime_artifact_links,
         )
     rendered = append_collected_result_files(rendered, report.source_files)
     if mode == MODE_DYNAMIC:
@@ -1013,6 +1090,7 @@ def append_regression_summary(
     regression_json_path: Path,
     mode: str = MODE_DYNAMIC,
     excluded_examples: Sequence[str] = (),
+    runtime_artifact_links: Optional[Dict[str, str]] = None,
 ) -> str:
     if not regression_json_path.is_file():
         return rendered
@@ -1033,7 +1111,11 @@ def append_regression_summary(
     if mode == MODE_STATIC:
         summary = static_regression_summary(comparisons, examples)
     else:
-        summary = dynamic_regression_summary(comparisons, examples)
+        summary = dynamic_regression_summary(
+            comparisons,
+            examples,
+            runtime_artifact_links=runtime_artifact_links,
+        )
     summary.append("")
     return rendered.rstrip() + "\n" + "\n".join(summary).rstrip() + "\n"
 
@@ -1075,6 +1157,7 @@ def static_regression_summary(
 def dynamic_regression_summary(
     comparisons: Sequence[object],
     examples: Sequence[str],
+    runtime_artifact_links: Optional[Dict[str, str]] = None,
 ) -> List[str]:
     new_error_count = count_regression_field(
         comparisons,
@@ -1122,7 +1205,14 @@ def dynamic_regression_summary(
                 "| `{}` | `{}` | {} |".format(
                     escape_table(example),
                     escape_table(check),
-                    escape_table(detail),
+                    escape_table(
+                        dynamic_error_detail(
+                            example,
+                            check,
+                            detail,
+                            runtime_artifact_links=runtime_artifact_links,
+                        )
+                    ),
                 )
             )
     if new_warning_count:
@@ -1181,6 +1271,34 @@ def dynamic_new_errors(
             if len(errors) == limit:
                 return errors
     return errors
+
+
+def dynamic_error_detail(
+    example: str,
+    check: str,
+    detail: str,
+    runtime_artifact_links: Optional[Dict[str, str]] = None,
+) -> str:
+    if not check.startswith(RUNTIME_SMOKE_TEST_PREFIX):
+        return detail
+
+    artifact_url = (runtime_artifact_links or {}).get(example)
+    target_url = artifact_url or github_actions_run_url()
+    if not target_url:
+        return RUNTIME_ERROR_REPORT_MESSAGE
+    return "{} [View execution logs]({})".format(
+        RUNTIME_ERROR_REPORT_MESSAGE,
+        target_url,
+    )
+
+
+def github_actions_run_url() -> str:
+    server_url = os.environ.get("GITHUB_SERVER_URL", "").rstrip("/")
+    repository = os.environ.get("GITHUB_REPOSITORY", "").strip("/")
+    run_id = os.environ.get("GITHUB_RUN_ID", "").strip()
+    if not server_url or not repository or not run_id:
+        return ""
+    return "{}/{}/actions/runs/{}".format(server_url, repository, run_id)
 
 
 def dynamic_new_warnings(
