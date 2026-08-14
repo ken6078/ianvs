@@ -155,9 +155,11 @@ jobs:
         run: |
           safe_name="$(printf '%s' "${{ matrix.selector }}" | tr -c 'A-Za-z0-9._-' '-')"
           result_file="${GITHUB_WORKSPACE}/baseline-results/${safe_name}.json"
+          log_file="${GITHUB_WORKSPACE}/baseline-results/${safe_name}.log"
           mkdir -p "${GITHUB_WORKSPACE}/baseline-results"
           echo "artifact_name=dynamic-validation-base-${safe_name}" >> "${GITHUB_OUTPUT}"
           echo "result_file=${result_file}" >> "${GITHUB_OUTPUT}"
+          echo "log_file=${log_file}" >> "${GITHUB_OUTPUT}"
 
           (
             cd "${IANVS_BASE_DIR}"
@@ -170,14 +172,16 @@ jobs:
               --inventory "${GITHUB_WORKSPACE}/.github/workflows/validator/data/example_inventory.yaml" \
               --format json \
               --report "${result_file}"
-          )
+          ) 2>&1 | tee "${log_file}"
 
       - name: Upload base dynamic validation result
         if: ${{ always() && steps.run_validation.outputs.result_file != '' }}
         uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.run_validation.outputs.artifact_name }}
-          path: ${{ steps.run_validation.outputs.result_file }}
+          path: |
+            ${{ steps.run_validation.outputs.result_file }}
+            ${{ steps.run_validation.outputs.log_file }}
           if-no-files-found: ignore
 
   dynamic-code-requirement-pr:
@@ -215,9 +219,11 @@ jobs:
         run: |
           safe_name="$(printf '%s' "${{ matrix.selector }}" | tr -c 'A-Za-z0-9._-' '-')"
           result_file="validation-results/${safe_name}.json"
+          log_file="validation-results/${safe_name}.log"
           mkdir -p validation-results
           echo "artifact_name=dynamic-validation-pr-${safe_name}" >> "${GITHUB_OUTPUT}"
           echo "result_file=${result_file}" >> "${GITHUB_OUTPUT}"
+          echo "log_file=${log_file}" >> "${GITHUB_OUTPUT}"
 
           python .github/workflows/validator/validation_runner.py \
             --dependency \
@@ -227,14 +233,17 @@ jobs:
             --example "${{ matrix.selector }}" \
             --inventory .github/workflows/validator/data/example_inventory.yaml \
             --format json \
-            --report "${result_file}"
+            --report "${result_file}" \
+            2>&1 | tee "${log_file}"
 
       - name: Upload PR dynamic validation result
         if: ${{ always() && steps.run_validation.outputs.result_file != '' }}
         uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.run_validation.outputs.artifact_name }}
-          path: ${{ steps.run_validation.outputs.result_file }}
+          path: |
+            ${{ steps.run_validation.outputs.result_file }}
+            ${{ steps.run_validation.outputs.log_file }}
           if-no-files-found: ignore
 
   regression-dynamic-code-requirement:
@@ -329,6 +338,18 @@ jobs:
           name: dynamic-validation-regression-report
           path: .
 
+      - name: Collect dynamic validation artifact metadata
+        if: ${{ github.event_name == 'pull_request' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api \
+            --paginate \
+            --slurp \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?per_page=100" \
+            > dynamic-validation-artifacts.json
+
       - name: Generate dynamic validation report
         run: |
           python .github/workflows/validator/services/report_generator.py \
@@ -336,6 +357,7 @@ jobs:
             --mode dynamic \
             --output dynamic-validation-report.md \
             --regression-json regression-report.json \
+            --artifacts-json dynamic-validation-artifacts.json \
             --step-summary \
             --allow-empty \
             --no-fail
@@ -416,7 +438,7 @@ jobs:
         with:
           name: tier2-base-health-results
           path: |
-            baseline-results/
+            baseline-results/*.json
             tier2-metadata.json
           retention-days: 30
           overwrite: true
