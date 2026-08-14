@@ -392,7 +392,10 @@ def scheduled_validation_plan(
     if health_record is None:
         return {
             "action": SCHEDULE_ACTION_RUN_TIER3,
-            "reason": "The example-status branch has no T2/T3 validation record.",
+            "reason": (
+                "The ci-managed/example-health-status branch has no T2/T3 "
+                "validation record."
+            ),
             "tier2_artifact_id": 0,
             "tier2_run_id": 0,
             "tier2_created_at": "",
