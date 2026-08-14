@@ -58,7 +58,7 @@ jobs:
               echo "next_tier3_at="
             } >> "${GITHUB_OUTPUT}"
           else
-            if git fetch --no-tags origin example-status; then
+            if git fetch --no-tags origin ci-managed/example-health-status; then
               git show FETCH_HEAD:.github/example-status/summary.json \
                 > example-status-summary.json
             fi
@@ -463,13 +463,13 @@ jobs:
             --example-status-output status-results \
             --no-fail
 
-      - name: Publish Tier 2 snapshots to example-status
+      - name: Publish Tier 2 snapshots to ci-managed/example-health-status
         run: |
           status_worktree="$(mktemp -d)"
-          if git fetch --no-tags origin example-status; then
-            git worktree add -b example-status "${status_worktree}" FETCH_HEAD
+          if git fetch --no-tags origin ci-managed/example-health-status; then
+            git worktree add -b ci-managed/example-health-status "${status_worktree}" FETCH_HEAD
           else
-            git worktree add -b example-status "${status_worktree}" HEAD
+            git worktree add -b ci-managed/example-health-status "${status_worktree}" HEAD
           fi
           git -C "${status_worktree}" rm -r --ignore-unmatch .github/workflows/result
           mkdir -p "${status_worktree}/.github/example-status"
@@ -482,7 +482,7 @@ jobs:
             exit 0
           fi
           git -C "${status_worktree}" commit -m "ci: update example status from Tier 2"
-          git -C "${status_worktree}" push origin example-status
+          git -C "${status_worktree}" push origin ci-managed/example-health-status
 
   select-tier3-examples:
     needs: plan-scheduled-validation
@@ -674,13 +674,13 @@ jobs:
           retention-days: 30
           overwrite: true
 
-      - name: Publish Tier 3 snapshots to example-status
+      - name: Publish Tier 3 snapshots to ci-managed/example-health-status
         run: |
           status_worktree="$(mktemp -d)"
-          if git fetch --no-tags origin example-status; then
-            git worktree add -b example-status "${status_worktree}" FETCH_HEAD
+          if git fetch --no-tags origin ci-managed/example-health-status; then
+            git worktree add -b ci-managed/example-health-status "${status_worktree}" FETCH_HEAD
           else
-            git worktree add -b example-status "${status_worktree}" HEAD
+            git worktree add -b ci-managed/example-health-status "${status_worktree}" HEAD
           fi
           git -C "${status_worktree}" rm -r --ignore-unmatch .github/workflows/result
           mkdir -p "${status_worktree}/.github/example-status"
@@ -693,4 +693,4 @@ jobs:
             exit 0
           fi
           git -C "${status_worktree}" commit -m "ci: update example status from Tier 3"
-          git -C "${status_worktree}" push origin example-status
+          git -C "${status_worktree}" push origin ci-managed/example-health-status
