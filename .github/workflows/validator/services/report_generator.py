@@ -62,8 +62,13 @@ MAX_COMMENT_BODY_CHARS = 60000
 MAX_DYNAMIC_NEW_ERRORS = 10
 MAX_DYNAMIC_NEW_WARNINGS = 10
 RUNTIME_SMOKE_TEST_PREFIX = "Runtime smoke test"
-RUNTIME_ERROR_REPORT_MESSAGE = (
-    "The automated validation run stopped because of a runtime error."
+AUTOMATED_VALIDATION_ERROR_MESSAGE = (
+    "The automated validation run stopped because of a `{}`."
+)
+DYNAMIC_EXCEPTION_TYPE_RE = re.compile(
+    r"(?<![A-Za-z0-9_.])"
+    r"(?P<error_type>[A-Za-z_][A-Za-z0-9_.]*(?:Error|Exception))(?=:)",
+    re.MULTILINE,
 )
 DEFAULT_RESULT_PATTERNS = ("validation-results", "validator-results")
 GITHUB_PULL_REQUEST_EVENTS = ("pull_request", "pull_request_target")
@@ -1305,17 +1310,31 @@ def dynamic_error_detail(
     detail: str,
     runtime_artifact_links: Optional[Dict[str, str]] = None,
 ) -> str:
-    if not check.startswith(RUNTIME_SMOKE_TEST_PREFIX):
-        return detail
-
+    message = AUTOMATED_VALIDATION_ERROR_MESSAGE.format(
+        dynamic_error_type(check, detail)
+    )
     artifact_url = (runtime_artifact_links or {}).get(example)
     target_url = artifact_url or github_actions_run_url()
     if not target_url:
-        return RUNTIME_ERROR_REPORT_MESSAGE
+        return "{} View execution logs.".format(message)
     return "{} [View execution logs]({})".format(
-        RUNTIME_ERROR_REPORT_MESSAGE,
+        message,
         target_url,
     )
+
+
+def dynamic_error_type(check: str, detail: str) -> str:
+    match = DYNAMIC_EXCEPTION_TYPE_RE.search(detail)
+    if match:
+        return match.group("error_type")
+
+    if check.startswith(RUNTIME_SMOKE_TEST_PREFIX):
+        return "runtime error"
+
+    normalized_check = check.strip() or "dynamic validation"
+    if normalized_check.lower().endswith(("error", "failure")):
+        return normalized_check
+    return "{} error".format(normalized_check)
 
 
 def github_actions_run_url() -> str:
