@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import traceback
 from pathlib import Path
 from typing import List, Mapping, Optional, Sequence
 
@@ -37,6 +38,7 @@ from smoke_test_validator import (
 from smoke_test_validator import validate_jsonl_examples
 from services.inventory_loader import DEFAULT_INVENTORY_PATH, load_inventory_examples
 from static_validator import (
+    ERROR,
     SKIP,
     CheckResult,
     ExampleReport,
@@ -139,10 +141,45 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print("No inventory examples matched the requested selection.", file=sys.stderr)
         return 1
 
-    report = run_validation_pipeline(repo_root, selected_examples, args)
+    try:
+        report = run_validation_pipeline(repo_root, selected_examples, args)
+    except Exception as error:  # pragma: no cover - traceback is diagnostic output
+        traceback.print_exc()
+        report = unexpected_failure_report(selected_examples, error)
     rendered = render_report(report, args.format)
     write_or_print_report(rendered, args.report)
     return 0 if report.passed else 1
+
+
+def unexpected_failure_report(
+    examples: Sequence[Mapping[str, object]],
+    error: Exception,
+) -> StaticValidationReport:
+    """Convert an unexpected validator crash into a blocking result artifact."""
+    detail = "{}: {}".format(type(error).__name__, error)
+    reports = []
+    for example in examples:
+        example_path = normalize_selector(str(example.get("path", "")))
+        example_name = str(example.get("name") or example_path)
+        reports.append(
+            ExampleReport(
+                name=example_name,
+                path=example_path,
+                checks=[
+                    CheckResult(
+                        name="Validation runner internal error",
+                        status=ERROR,
+                        message=(
+                            "Validation stopped because an unexpected exception "
+                            "was raised."
+                        ),
+                        file=str(example.get("benchmark_file") or example_path),
+                        details=[detail],
+                    )
+                ],
+            )
+        )
+    return StaticValidationReport(reports=reports)
 
 
 def load_selected_examples(
