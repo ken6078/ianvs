@@ -28,11 +28,9 @@ from dependency_validator import (
     INSTALL_MODE_SKIP,
 )
 from dependency_validator import validate_examples as validate_dependencies
-from environment_preparation_validator import (
-    validate_examples as prepare_example_environments,
-)
 from smoke_test_validator import (
     DEFAULT_TIMEOUT_SECONDS,
+    prepare_example_environments,
     validate_examples as validate_smoke_examples,
 )
 from smoke_test_validator import validate_jsonl_examples
