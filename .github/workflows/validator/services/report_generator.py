@@ -1225,40 +1225,31 @@ def append_static_regression_details(
     comparisons: Sequence[object],
     severity: str,
 ) -> None:
-    issue_kind, issue_count, _ = preferred_regression_issue_details(
-        comparisons, severity
-    )
-    if not issue_count:
-        return
-
     label = "ERRORs" if severity == ERROR else "warnings"
-    rows = static_regression_problem_rows(comparisons, severity, issue_kind)
-    limit = (
-        MAX_DYNAMIC_NEW_ERRORS
-        if severity == ERROR
-        else MAX_DYNAMIC_NEW_WARNINGS
-    )
-    displayed_rows = rows[:limit]
-    summary.extend(
-        [
-            "",
-            "#### {} {} ({} of {})".format(
-                issue_kind, label, len(displayed_rows), len(rows)
-            ),
-            "",
-            "| Example | Severity | Check | Problem and impact |",
-            "|---|---:|---|---|",
-        ]
-    )
-    for example, check, problem_and_impact in displayed_rows:
-        summary.append(
-            "| `{}` | {} | `{}` | {} |".format(
-                escape_table(example),
-                severity,
-                escape_table(check),
-                escape_table(problem_and_impact),
-            )
+    for issue_kind in ("New", "Pre-existing"):
+        rows = static_regression_problem_rows(comparisons, severity, issue_kind)
+        if not rows:
+            continue
+        summary.extend(
+            [
+                "",
+                "<details>",
+                "<summary><h4>{} {}</h4></summary>".format(issue_kind, label),
+                "",
+                "| Example | Severity | Check | Problem and impact |",
+                "|---|---:|---|---|",
+            ]
         )
+        for example, check, problem_and_impact in rows:
+            summary.append(
+                "| `{}` | {} | `{}` | {} |".format(
+                    escape_table(example),
+                    severity,
+                    escape_table(check),
+                    escape_table(problem_and_impact),
+                )
+            )
+        summary.extend(["", "</details>"])
 
 
 def static_regression_problem_rows(
@@ -1334,18 +1325,15 @@ def dynamic_regression_summary(
     if not examples:
         summary.append("| No regression comparisons were collected. | 0 | 0 | 0 | 0 |")
 
-    error_kind, error_count, errors = preferred_regression_issue_details(
-        comparisons, ERROR
-    )
-    if error_count:
+    for error_kind in ("New", "Pre-existing"):
+        errors = regression_issue_group_details(comparisons, ERROR, error_kind)
+        if not errors:
+            continue
         summary.extend(
             [
                 "",
-                "### {} ERRORs ({} of {})".format(
-                    error_kind,
-                    len(errors),
-                    error_count,
-                ),
+                "<details>",
+                "<summary><h3>{} ERRORs</h3></summary>".format(error_kind),
                 "",
                 "| Example | Check | ERROR |",
                 "|---|---|---|",
@@ -1369,18 +1357,18 @@ def dynamic_regression_summary(
                     ),
                 )
             )
-    warning_kind, warning_count, warnings = preferred_regression_issue_details(
-        comparisons, WARNING
-    )
-    if warning_count:
+        summary.extend(["", "</details>"])
+    for warning_kind in ("New", "Pre-existing"):
+        warnings = regression_issue_group_details(
+            comparisons, WARNING, warning_kind
+        )
+        if not warnings:
+            continue
         summary.extend(
             [
                 "",
-                "### {} warnings ({} of {})".format(
-                    warning_kind,
-                    len(warnings),
-                    warning_count,
-                ),
+                "<details>",
+                "<summary><h3>{} warnings</h3></summary>".format(warning_kind),
                 "",
                 "| Example | Check | Warning |",
                 "|---|---|---|",
@@ -1394,41 +1382,26 @@ def dynamic_regression_summary(
                     escape_table(detail),
                 )
             )
+        summary.extend(["", "</details>"])
     return summary
 
 
-def preferred_regression_issue_details(
+def regression_issue_group_details(
     comparisons: Sequence[object],
     severity: str,
-) -> Tuple[str, int, List[Tuple[str, str, str]]]:
+    issue_kind: str,
+) -> List[Tuple[str, str, str]]:
     is_error = severity == ERROR
-    limit = MAX_DYNAMIC_NEW_ERRORS if is_error else MAX_DYNAMIC_NEW_WARNINGS
-    new_count_field = "new_issue_count" if is_error else "new_warning_count"
-    pre_existing_count_field = (
-        "pre_existing_issue_count"
-        if is_error
-        else "pre_existing_warning_count"
-    )
-    new_count = count_regression_field(
-        comparisons,
-        new_count_field,
-        fallback_classification="Failed: PR regression" if is_error else "",
-    )
-    pre_existing_count = count_regression_field(
-        comparisons,
-        pre_existing_count_field,
-        fallback_classification="Failed: Pre-existing failure"
-        if is_error
-        else "",
-    )
-    if new_count:
-        issue_kind = "New"
-        issue_count = new_count
+    if issue_kind == "New":
+        count_field = "new_issue_count" if is_error else "new_warning_count"
         details_field = "new_details" if is_error else "new_warning_details"
         fallback_classification = "Failed: PR regression" if is_error else ""
-    elif pre_existing_count:
-        issue_kind = "Pre-existing"
-        issue_count = pre_existing_count
+    else:
+        count_field = (
+            "pre_existing_issue_count"
+            if is_error
+            else "pre_existing_warning_count"
+        )
         details_field = (
             "pre_existing_details"
             if is_error
@@ -1437,30 +1410,25 @@ def preferred_regression_issue_details(
         fallback_classification = (
             "Failed: Pre-existing failure" if is_error else ""
         )
-    else:
-        return "", 0, []
 
-    issues = regression_issue_details(
+    return regression_issue_details(
         comparisons,
-        count_field=new_count_field
-        if issue_kind == "New"
-        else pre_existing_count_field,
+        count_field=count_field,
         details_field=details_field,
-        limit=limit,
+        limit=None,
         fallback_classification=fallback_classification,
         fallback_details_field="details" if is_error else "",
         default_message="{} {} detected.".format(
             issue_kind, "ERROR" if is_error else "warning"
         ),
     )
-    return issue_kind, issue_count, issues
 
 
 def regression_issue_details(
     comparisons: Sequence[object],
     count_field: str,
     details_field: str,
-    limit: int,
+    limit: Optional[int],
     fallback_classification: str = "",
     fallback_details_field: str = "",
     default_message: str = "Issue detected.",
@@ -1491,7 +1459,7 @@ def regression_issue_details(
         check = str(comparison.get("check") or "")
         for detail in details[:issue_count]:
             issues.append((example, check, detail))
-            if len(issues) == limit:
+            if limit is not None and len(issues) == limit:
                 return issues
     return issues
 
