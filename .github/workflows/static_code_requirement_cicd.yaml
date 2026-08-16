@@ -239,6 +239,17 @@ jobs:
           name: static-validation-regression-report
           path: .
 
+      - name: Collect static validation artifact metadata
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api \
+            --paginate \
+            --slurp \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?per_page=100" \
+            > static-validation-artifacts.json
+
       - name: Generate validation report
         run: |
           python .github/workflows/validator/services/report_generator.py \
@@ -246,6 +257,7 @@ jobs:
             --mode static \
             --output validation-report.md \
             --regression-json regression-report.json \
+            --artifacts-json static-validation-artifacts.json \
             --step-summary \
             --no-fail
 
