@@ -266,6 +266,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 2
 
     report = load_combined_report(result_paths)
+    inventory_path = Path(args.inventory)
+    inventory_examples = (
+        load_inventory_examples(inventory_path, active_only=False)
+        if inventory_path.is_file()
+        else []
+    )
     validation_artifact_links = load_validation_artifact_links(
         args.artifacts_json,
         result_paths,
@@ -277,6 +283,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         regression_json=args.regression_json,
         runtime_artifact_links=validation_artifact_links["pr"],
         base_artifact_links=validation_artifact_links["base"],
+        inventory_examples=inventory_examples,
     )
     publish_report(rendered, report, args, mode=args.mode)
     if args.example_health_readme:
@@ -436,11 +443,19 @@ def load_validation_artifact_links(
         for raw_example in raw_examples:
             if not isinstance(raw_example, dict):
                 continue
-            example = str(raw_example.get("path") or raw_example.get("name") or "")
-            if example:
+            example_path = str(
+                raw_example.get("path") or raw_example.get("name") or ""
+            )
+            example_name = str(
+                raw_example.get("name") or raw_example.get("path") or ""
+            )
+            if example_path:
                 for revision, artifact_url in result_artifact_urls.items():
                     if artifact_url:
-                        links[revision][example] = artifact_url
+                        links[revision][
+                            example_artifact_key(example_name, example_path)
+                        ] = artifact_url
+                        links[revision].setdefault(example_path, artifact_url)
     return links
 
 
@@ -561,6 +576,7 @@ def render_full_report(
     regression_json: str = "",
     runtime_artifact_links: Optional[Dict[str, str]] = None,
     base_artifact_links: Optional[Dict[str, str]] = None,
+    inventory_examples: Sequence[dict] = (),
 ) -> str:
     if mode == MODE_DYNAMIC:
         rendered = render_dynamic_markdown(report, include_skipped_examples=False)
@@ -581,6 +597,7 @@ def render_full_report(
         report,
         base_artifact_links=base_artifact_links,
         pr_artifact_links=runtime_artifact_links,
+        inventory_examples=inventory_examples,
     )
     if mode == MODE_DYNAMIC:
         rendered = append_dynamic_skipped_examples(rendered, report)
@@ -1478,6 +1495,7 @@ def append_collected_result_files(
     report: CombinedReport,
     base_artifact_links: Optional[Dict[str, str]] = None,
     pr_artifact_links: Optional[Dict[str, str]] = None,
+    inventory_examples: Sequence[dict] = (),
 ) -> str:
     if not report.source_files:
         return rendered
@@ -1490,6 +1508,13 @@ def append_collected_result_files(
     ]
     base_links = base_artifact_links or {}
     pr_links = pr_artifact_links or {}
+    inventory_by_identity = {
+        (
+            str(item.get("name") or ""),
+            str(item.get("path") or "").rstrip("/"),
+        ): item
+        for item in inventory_examples
+    }
     if base_links or pr_links:
         lines.extend(
             [
@@ -1505,12 +1530,22 @@ def append_collected_result_files(
         for example in report.examples:
             lines.append(
                 "| {} | {} | {} | {} |".format(
-                    escape_table(example_category(example.path)),
-                    example_source_markdown(example),
-                    artifact_markdown(
-                        base_links.get(example.path), "Base Artifact"
+                    example_folder_markdown(
+                        example,
+                        inventory_by_identity.get(example.identity),
                     ),
-                    artifact_markdown(pr_links.get(example.path), "PR Artifact"),
+                    benchmark_file_markdown(
+                        example,
+                        inventory_by_identity.get(example.identity),
+                    ),
+                    artifact_markdown(
+                        artifact_link_for_example(base_links, example),
+                        "Base Artifact",
+                    ),
+                    artifact_markdown(
+                        artifact_link_for_example(pr_links, example),
+                        "PR Artifact",
+                    ),
                 )
             )
     else:
@@ -1529,6 +1564,48 @@ def append_collected_result_files(
     return rendered.rstrip() + "\n" + "\n".join(lines).rstrip() + "\n"
 
 
+def example_folder_markdown(
+    example: ExampleResult,
+    inventory_example: Optional[dict],
+) -> str:
+    path = str(
+        (inventory_example or {}).get("path") or example.path
+    ).rstrip("/")
+    label = str(
+        (inventory_example or {}).get("example") or example_category(path)
+    )
+    return source_path_markdown(label, path, "tree")
+
+
+def benchmark_file_markdown(
+    example: ExampleResult,
+    inventory_example: Optional[dict],
+) -> str:
+    benchmark_file = str(
+        (inventory_example or {}).get("benchmark_file") or ""
+    ).rstrip("/")
+    if not benchmark_file:
+        return "`{}`".format(escape_table(example.name))
+    return source_path_markdown(example.name, benchmark_file, "blob")
+
+
+def source_path_markdown(label: str, path: str, kind: str) -> str:
+    server_url = os.environ.get("GITHUB_SERVER_URL", "").rstrip("/")
+    repository = os.environ.get("GITHUB_REPOSITORY", "").strip("/")
+    source_sha = os.environ.get("GITHUB_SHA", "").strip()
+    if server_url and repository and source_sha:
+        target = "{}/{}/{}/{}/{}".format(
+            server_url,
+            repository,
+            kind,
+            quote(source_sha, safe=""),
+            quote(path, safe="/"),
+        )
+    else:
+        target = path
+    return "[{}]({})".format(escape_table(label), target)
+
+
 def example_category(path: str) -> str:
     parts = [part for part in path.strip("/").split("/") if part]
     if len(parts) > 1 and parts[0] == "examples":
@@ -1536,21 +1613,17 @@ def example_category(path: str) -> str:
     return parts[0] if parts else path
 
 
-def example_source_markdown(example: ExampleResult) -> str:
-    path = example.path.rstrip("/")
-    server_url = os.environ.get("GITHUB_SERVER_URL", "").rstrip("/")
-    repository = os.environ.get("GITHUB_REPOSITORY", "").strip("/")
-    source_sha = os.environ.get("GITHUB_SHA", "").strip()
-    if server_url and repository and source_sha:
-        target = "{}/{}/tree/{}/{}".format(
-            server_url,
-            repository,
-            quote(source_sha, safe=""),
-            quote(path, safe="/"),
-        )
-    else:
-        target = path
-    return "[{}]({})".format(escape_table(example.name), target)
+def example_artifact_key(name: str, path: str) -> str:
+    return "{}\0{}".format(name, path.rstrip("/"))
+
+
+def artifact_link_for_example(
+    artifact_links: Dict[str, str],
+    example: ExampleResult,
+) -> Optional[str]:
+    return artifact_links.get(
+        example_artifact_key(example.name, example.path)
+    ) or artifact_links.get(example.path)
 
 
 def artifact_markdown(url: Optional[str], label: str) -> str:
