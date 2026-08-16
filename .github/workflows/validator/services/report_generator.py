@@ -266,7 +266,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 2
 
     report = load_combined_report(result_paths)
-    runtime_artifact_links = load_runtime_artifact_links(
+    validation_artifact_links = load_validation_artifact_links(
         args.artifacts_json,
         result_paths,
     )
@@ -274,7 +274,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         report,
         mode=args.mode,
         regression_json=args.regression_json,
-        runtime_artifact_links=runtime_artifact_links,
+        runtime_artifact_links=validation_artifact_links["pr"],
+        base_artifact_links=validation_artifact_links["base"],
     )
     publish_report(rendered, report, args, mode=args.mode)
     if args.example_health_readme:
@@ -368,10 +369,11 @@ def load_combined_report(paths: Sequence[Path]) -> CombinedReport:
     )
 
 
-def load_runtime_artifact_links(
+def load_validation_artifact_links(
     artifacts_json: str,
     result_paths: Sequence[Path],
-) -> Dict[str, str]:
+) -> Dict[str, Dict[str, str]]:
+    links: Dict[str, Dict[str, str]] = {"base": {}, "pr": {}}
     artifacts_path = Path(artifacts_json)
     server_url = os.environ.get("GITHUB_SERVER_URL", "").rstrip("/")
     repository = os.environ.get("GITHUB_REPOSITORY", "").strip("/")
@@ -383,12 +385,12 @@ def load_runtime_artifact_links(
         or not repository
         or not run_id
     ):
-        return {}
+        return links
 
     try:
         payload = json.loads(artifacts_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return {}
+        return links
     pages = payload if isinstance(payload, list) else [payload]
     artifact_urls = {}
     for page in pages:
@@ -411,13 +413,19 @@ def load_runtime_artifact_links(
                 artifact_id,
             )
 
-    links = {}
     for result_path in result_paths:
-        artifact_name = "dynamic-validation-pr-{}".format(result_path.stem)
-        artifact_url = artifact_urls.get(artifact_name)
-        if not artifact_url:
+        result_artifact_urls = {
+            revision: artifact_urls.get(
+                "dynamic-validation-{}-{}".format(revision, result_path.stem)
+            )
+            for revision in ("base", "pr")
+        }
+        if not any(result_artifact_urls.values()):
             continue
-        result_payload = json.loads(result_path.read_text(encoding="utf-8"))
+        try:
+            result_payload = json.loads(result_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
         raw_examples = result_payload.get("examples", [])
         if not isinstance(raw_examples, list):
             continue
@@ -426,8 +434,18 @@ def load_runtime_artifact_links(
                 continue
             example = str(raw_example.get("path") or raw_example.get("name") or "")
             if example:
-                links[example] = artifact_url
+                for revision, artifact_url in result_artifact_urls.items():
+                    if artifact_url:
+                        links[revision][example] = artifact_url
     return links
+
+
+def load_runtime_artifact_links(
+    artifacts_json: str,
+    result_paths: Sequence[Path],
+) -> Dict[str, str]:
+    """Return PR artifact links for callers using the original helper."""
+    return load_validation_artifact_links(artifacts_json, result_paths)["pr"]
 
 
 def merge_duplicate_examples(examples: Sequence[ExampleResult]) -> List[ExampleResult]:
@@ -538,6 +556,7 @@ def render_full_report(
     mode: str = MODE_DYNAMIC,
     regression_json: str = "",
     runtime_artifact_links: Optional[Dict[str, str]] = None,
+    base_artifact_links: Optional[Dict[str, str]] = None,
 ) -> str:
     if mode == MODE_DYNAMIC:
         rendered = render_dynamic_markdown(report, include_skipped_examples=False)
@@ -553,7 +572,12 @@ def render_full_report(
             else (),
             runtime_artifact_links=runtime_artifact_links,
         )
-    rendered = append_collected_result_files(rendered, report.source_files)
+    rendered = append_collected_result_files(
+        rendered,
+        report,
+        base_artifact_links=base_artifact_links,
+        pr_artifact_links=runtime_artifact_links,
+    )
     if mode == MODE_DYNAMIC:
         rendered = append_dynamic_skipped_examples(rendered, report)
     return rendered
@@ -1042,13 +1066,15 @@ def append_dynamic_skipped_examples(
 
     lines = [
         "",
-        "## Skipped Examples",
+        "<details>",
+        "<summary><h2>Skipped Examples</h2></summary>",
         "",
         "| Example | Reason |",
         "|---|---|",
     ]
     for example_path, reason in sorted(skipped_examples.items()):
         lines.append("| `{}` | {} |".format(escape_table(example_path), reason))
+    lines.extend(["", "</details>"])
     return rendered.rstrip() + "\n" + "\n".join(lines).rstrip() + "\n"
 
 
@@ -1443,23 +1469,90 @@ def regression_warning_summary_row(
     )
 
 
-def append_collected_result_files(rendered: str, source_files: Sequence[str]) -> str:
-    if not source_files:
+def append_collected_result_files(
+    rendered: str,
+    report: CombinedReport,
+    base_artifact_links: Optional[Dict[str, str]] = None,
+    pr_artifact_links: Optional[Dict[str, str]] = None,
+) -> str:
+    if not report.source_files:
         return rendered
 
     lines = [
         "",
-        "## Collected Result Files",
-        "",
-        (
-            "The following files contain the validation output for the checked "
-            "Example benchmark YAML files."
-        ),
+        "<details>",
+        "<summary><h2>Collected Result Files</h2></summary>",
         "",
     ]
-    for source_file in source_files:
-        lines.append("- `{}`".format(source_file))
+    base_links = base_artifact_links or {}
+    pr_links = pr_artifact_links or {}
+    if base_links or pr_links:
+        lines.extend(
+            [
+                (
+                    "The artifacts contain the validation result JSON and execution "
+                    "log for each checked Example benchmark unit."
+                ),
+                "",
+                "| Example | Benchmark Unit | Base Artifact | PR Artifact |",
+                "|---|---|---|---|",
+            ]
+        )
+        for example in report.examples:
+            lines.append(
+                "| {} | {} | {} | {} |".format(
+                    escape_table(example_category(example.path)),
+                    example_source_markdown(example),
+                    artifact_markdown(
+                        base_links.get(example.path), "Base Artifact"
+                    ),
+                    artifact_markdown(pr_links.get(example.path), "PR Artifact"),
+                )
+            )
+    else:
+        lines.extend(
+            [
+                (
+                    "The following files contain the validation output for the "
+                    "checked Example benchmark YAML files."
+                ),
+                "",
+            ]
+        )
+        for source_file in report.source_files:
+            lines.append("- `{}`".format(source_file))
+    lines.extend(["", "</details>"])
     return rendered.rstrip() + "\n" + "\n".join(lines).rstrip() + "\n"
+
+
+def example_category(path: str) -> str:
+    parts = [part for part in path.strip("/").split("/") if part]
+    if len(parts) > 1 and parts[0] == "examples":
+        return parts[1]
+    return parts[0] if parts else path
+
+
+def example_source_markdown(example: ExampleResult) -> str:
+    path = example.path.rstrip("/")
+    server_url = os.environ.get("GITHUB_SERVER_URL", "").rstrip("/")
+    repository = os.environ.get("GITHUB_REPOSITORY", "").strip("/")
+    source_sha = os.environ.get("GITHUB_SHA", "").strip()
+    if server_url and repository and source_sha:
+        target = "{}/{}/tree/{}/{}".format(
+            server_url,
+            repository,
+            quote(source_sha, safe=""),
+            quote(path, safe="/"),
+        )
+    else:
+        target = path
+    return "[{}]({})".format(escape_table(example.name), target)
+
+
+def artifact_markdown(url: Optional[str], label: str) -> str:
+    if not url:
+        return "—"
+    return "[{}]({})".format(label, url)
 
 
 def regression_examples(comparisons: Sequence[object]) -> List[str]:
