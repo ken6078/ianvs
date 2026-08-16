@@ -269,6 +269,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     validation_artifact_links = load_validation_artifact_links(
         args.artifacts_json,
         result_paths,
+        mode=args.mode,
     )
     rendered = render_full_report(
         report,
@@ -372,6 +373,7 @@ def load_combined_report(paths: Sequence[Path]) -> CombinedReport:
 def load_validation_artifact_links(
     artifacts_json: str,
     result_paths: Sequence[Path],
+    mode: str = MODE_DYNAMIC,
 ) -> Dict[str, Dict[str, str]]:
     links: Dict[str, Dict[str, str]] = {"base": {}, "pr": {}}
     artifacts_path = Path(artifacts_json)
@@ -416,7 +418,9 @@ def load_validation_artifact_links(
     for result_path in result_paths:
         result_artifact_urls = {
             revision: artifact_urls.get(
-                "dynamic-validation-{}-{}".format(revision, result_path.stem)
+                "{}-validation-{}-{}".format(
+                    mode, revision, result_path.stem
+                )
             )
             for revision in ("base", "pr")
         }
