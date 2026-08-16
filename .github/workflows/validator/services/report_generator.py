@@ -1225,32 +1225,83 @@ def append_static_regression_details(
     comparisons: Sequence[object],
     severity: str,
 ) -> None:
-    issue_kind, issue_count, issues = preferred_regression_issue_details(
+    issue_kind, issue_count, _ = preferred_regression_issue_details(
         comparisons, severity
     )
     if not issue_count:
         return
 
     label = "ERRORs" if severity == ERROR else "warnings"
+    rows = static_regression_problem_rows(comparisons, severity, issue_kind)
+    limit = (
+        MAX_DYNAMIC_NEW_ERRORS
+        if severity == ERROR
+        else MAX_DYNAMIC_NEW_WARNINGS
+    )
+    displayed_rows = rows[:limit]
     summary.extend(
         [
             "",
             "#### {} {} ({} of {})".format(
-                issue_kind, label, len(issues), issue_count
+                issue_kind, label, len(displayed_rows), len(rows)
             ),
             "",
-            "| Example | Check | {} |".format(severity),
-            "|---|---|---|",
+            "| Example | Severity | Check | Problem and impact |",
+            "|---|---:|---|---|",
         ]
     )
-    for example, check, detail in issues:
+    for example, check, problem_and_impact in displayed_rows:
         summary.append(
-            "| `{}` | `{}` | {} |".format(
+            "| `{}` | {} | `{}` | {} |".format(
                 escape_table(example),
+                severity,
                 escape_table(check),
-                escape_table(detail),
+                escape_table(problem_and_impact),
             )
         )
+
+
+def static_regression_problem_rows(
+    comparisons: Sequence[object],
+    severity: str,
+    issue_kind: str,
+) -> List[Tuple[str, str, str]]:
+    is_error = severity == ERROR
+    if issue_kind == "New":
+        count_field = "new_issue_count" if is_error else "new_warning_count"
+        fallback_classification = "Failed: PR regression" if is_error else ""
+    else:
+        count_field = (
+            "pre_existing_issue_count"
+            if is_error
+            else "pre_existing_warning_count"
+        )
+        fallback_classification = (
+            "Failed: Pre-existing failure" if is_error else ""
+        )
+
+    rows = []
+    seen = set()
+    for comparison in comparisons:
+        if not isinstance(comparison, dict):
+            continue
+        if not count_regression_field(
+            [comparison],
+            count_field,
+            fallback_classification=fallback_classification,
+        ):
+            continue
+        example = str(comparison.get("example") or "")
+        check = str(comparison.get("check") or "")
+        identity = (example, check)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        problem_and_impact = str(comparison.get("message") or "").strip()
+        if not problem_and_impact:
+            problem_and_impact = "See the validation check output for impact details."
+        rows.append((example, check, problem_and_impact))
+    return rows
 
 
 def dynamic_regression_summary(
