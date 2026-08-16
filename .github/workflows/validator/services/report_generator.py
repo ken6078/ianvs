@@ -591,6 +591,7 @@ def render_full_report(
             if mode == MODE_DYNAMIC
             else (),
             runtime_artifact_links=runtime_artifact_links,
+            base_artifact_links=base_artifact_links,
         )
     rendered = append_collected_result_files(
         rendered,
@@ -989,32 +990,6 @@ def render_static_markdown(report: CombinedReport) -> str:
             )
         )
 
-    detected_issues = [
-        (example, check)
-        for example in report.examples
-        for check in example.checks
-        if check.status in (ERROR, WARNING)
-    ]
-    if detected_issues:
-        lines.extend(
-            [
-                "",
-                "## Detected Issues",
-                "",
-                "| Example | Severity | Check | Problem and impact |",
-                "|---|---:|---|---|",
-            ]
-        )
-        for example, check in detected_issues:
-            lines.append(
-                "| `{}` | {} | `{}` | {} |".format(
-                    escape_table(example.path),
-                    check.status,
-                    escape_table(check.name),
-                    escape_table(check.message),
-                )
-            )
-
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -1169,6 +1144,7 @@ def append_regression_summary(
     mode: str = MODE_DYNAMIC,
     excluded_examples: Sequence[str] = (),
     runtime_artifact_links: Optional[Dict[str, str]] = None,
+    base_artifact_links: Optional[Dict[str, str]] = None,
 ) -> str:
     if not regression_json_path.is_file():
         return rendered
@@ -1193,6 +1169,7 @@ def append_regression_summary(
             comparisons,
             examples,
             runtime_artifact_links=runtime_artifact_links,
+            base_artifact_links=base_artifact_links,
         )
     summary.append("")
     return rendered.rstrip() + "\n" + "\n".join(summary).rstrip() + "\n"
@@ -1216,6 +1193,12 @@ def static_regression_summary(
     if not examples:
         summary.append("| No regression comparisons were collected. | 0 | 0 | 0 | 0 |")
 
+    append_static_regression_details(
+        summary,
+        comparisons,
+        severity=ERROR,
+    )
+
     summary.extend(
         [
             "",
@@ -1229,22 +1212,57 @@ def static_regression_summary(
         summary.append(regression_warning_summary_row(comparisons, example))
     if not examples:
         summary.append("| No regression comparisons were collected. | 0 | 0 | 0 | 0 |")
+    append_static_regression_details(
+        summary,
+        comparisons,
+        severity=WARNING,
+    )
     return summary
+
+
+def append_static_regression_details(
+    summary: List[str],
+    comparisons: Sequence[object],
+    severity: str,
+) -> None:
+    issue_kind, issue_count, issues = preferred_regression_issue_details(
+        comparisons, severity
+    )
+    if not issue_count:
+        return
+
+    label = "ERRORs" if severity == ERROR else "warnings"
+    summary.extend(
+        [
+            "",
+            "#### {} {} ({} of {})".format(
+                issue_kind, label, len(issues), issue_count
+            ),
+            "",
+            "| Example | Check | {} |".format(severity),
+            "|---|---|---|",
+        ]
+    )
+    for example, check, detail in issues:
+        summary.append(
+            "| `{}` | `{}` | {} |".format(
+                escape_table(example),
+                escape_table(check),
+                escape_table(detail),
+            )
+        )
 
 
 def dynamic_regression_summary(
     comparisons: Sequence[object],
     examples: Sequence[str],
     runtime_artifact_links: Optional[Dict[str, str]] = None,
+    base_artifact_links: Optional[Dict[str, str]] = None,
 ) -> List[str]:
     new_error_count = count_regression_field(
         comparisons,
         "new_issue_count",
         fallback_classification="Failed: PR regression",
-    )
-    new_warning_count = count_regression_field(
-        comparisons,
-        "new_warning_count",
     )
     summary = [
         "",
@@ -1265,20 +1283,27 @@ def dynamic_regression_summary(
     if not examples:
         summary.append("| No regression comparisons were collected. | 0 | 0 | 0 | 0 |")
 
-    if new_error_count:
-        new_errors = dynamic_new_errors(comparisons, MAX_DYNAMIC_NEW_ERRORS)
+    error_kind, error_count, errors = preferred_regression_issue_details(
+        comparisons, ERROR
+    )
+    if error_count:
         summary.extend(
             [
                 "",
-                "### New ERRORs ({} of {})".format(
-                    len(new_errors), new_error_count
+                "### {} ERRORs ({} of {})".format(
+                    error_kind,
+                    len(errors),
+                    error_count,
                 ),
                 "",
                 "| Example | Check | ERROR |",
                 "|---|---|---|",
             ]
         )
-        for example, check, detail in new_errors:
+        error_artifact_links = (
+            runtime_artifact_links if error_kind == "New" else base_artifact_links
+        )
+        for example, check, detail in errors:
             summary.append(
                 "| `{}` | `{}` | {} |".format(
                     escape_table(example),
@@ -1288,27 +1313,29 @@ def dynamic_regression_summary(
                             example,
                             check,
                             detail,
-                            runtime_artifact_links=runtime_artifact_links,
+                            runtime_artifact_links=error_artifact_links,
                         )
                     ),
                 )
             )
-    if new_warning_count:
-        new_warnings = dynamic_new_warnings(
-            comparisons, MAX_DYNAMIC_NEW_WARNINGS
-        )
+    warning_kind, warning_count, warnings = preferred_regression_issue_details(
+        comparisons, WARNING
+    )
+    if warning_count:
         summary.extend(
             [
                 "",
-                "### New warnings ({} of {})".format(
-                    len(new_warnings), new_warning_count
+                "### {} warnings ({} of {})".format(
+                    warning_kind,
+                    len(warnings),
+                    warning_count,
                 ),
                 "",
                 "| Example | Check | Warning |",
                 "|---|---|---|",
             ]
         )
-        for example, check, detail in new_warnings:
+        for example, check, detail in warnings:
             summary.append(
                 "| `{}` | `{}` | {} |".format(
                     escape_table(example),
@@ -1319,36 +1346,118 @@ def dynamic_regression_summary(
     return summary
 
 
+def preferred_regression_issue_details(
+    comparisons: Sequence[object],
+    severity: str,
+) -> Tuple[str, int, List[Tuple[str, str, str]]]:
+    is_error = severity == ERROR
+    limit = MAX_DYNAMIC_NEW_ERRORS if is_error else MAX_DYNAMIC_NEW_WARNINGS
+    new_count_field = "new_issue_count" if is_error else "new_warning_count"
+    pre_existing_count_field = (
+        "pre_existing_issue_count"
+        if is_error
+        else "pre_existing_warning_count"
+    )
+    new_count = count_regression_field(
+        comparisons,
+        new_count_field,
+        fallback_classification="Failed: PR regression" if is_error else "",
+    )
+    pre_existing_count = count_regression_field(
+        comparisons,
+        pre_existing_count_field,
+        fallback_classification="Failed: Pre-existing failure"
+        if is_error
+        else "",
+    )
+    if new_count:
+        issue_kind = "New"
+        issue_count = new_count
+        details_field = "new_details" if is_error else "new_warning_details"
+        fallback_classification = "Failed: PR regression" if is_error else ""
+    elif pre_existing_count:
+        issue_kind = "Pre-existing"
+        issue_count = pre_existing_count
+        details_field = (
+            "pre_existing_details"
+            if is_error
+            else "pre_existing_warning_details"
+        )
+        fallback_classification = (
+            "Failed: Pre-existing failure" if is_error else ""
+        )
+    else:
+        return "", 0, []
+
+    issues = regression_issue_details(
+        comparisons,
+        count_field=new_count_field
+        if issue_kind == "New"
+        else pre_existing_count_field,
+        details_field=details_field,
+        limit=limit,
+        fallback_classification=fallback_classification,
+        fallback_details_field="details" if is_error else "",
+        default_message="{} {} detected.".format(
+            issue_kind, "ERROR" if is_error else "warning"
+        ),
+    )
+    return issue_kind, issue_count, issues
+
+
+def regression_issue_details(
+    comparisons: Sequence[object],
+    count_field: str,
+    details_field: str,
+    limit: int,
+    fallback_classification: str = "",
+    fallback_details_field: str = "",
+    default_message: str = "Issue detected.",
+) -> List[Tuple[str, str, str]]:
+    issues = []
+    for comparison in comparisons:
+        if not isinstance(comparison, dict):
+            continue
+        issue_count = count_regression_field(
+            [comparison],
+            count_field,
+            fallback_classification=fallback_classification,
+        )
+        if not issue_count:
+            continue
+
+        raw_details = comparison.get(details_field)
+        if (
+            (not isinstance(raw_details, list) or not raw_details)
+            and fallback_details_field
+        ):
+            raw_details = comparison.get(fallback_details_field)
+        details = string_list(raw_details)
+        if not details:
+            details = [str(comparison.get("message") or default_message)]
+
+        example = str(comparison.get("example") or "")
+        check = str(comparison.get("check") or "")
+        for detail in details[:issue_count]:
+            issues.append((example, check, detail))
+            if len(issues) == limit:
+                return issues
+    return issues
+
+
 def dynamic_new_errors(
     comparisons: Sequence[object],
     limit: int,
 ) -> List[Tuple[str, str, str]]:
-    errors = []
-    for comparison in comparisons:
-        if not isinstance(comparison, dict):
-            continue
-        new_error_count = count_regression_field(
-            [comparison],
-            "new_issue_count",
-            fallback_classification="Failed: PR regression",
-        )
-        if not new_error_count:
-            continue
-
-        raw_details = comparison.get("new_details")
-        if not isinstance(raw_details, list) or not raw_details:
-            raw_details = comparison.get("details")
-        details = string_list(raw_details)
-        if not details:
-            details = [str(comparison.get("message") or "New ERROR detected.")]
-
-        example = str(comparison.get("example") or "")
-        check = str(comparison.get("check") or "")
-        for detail in details[:new_error_count]:
-            errors.append((example, check, detail))
-            if len(errors) == limit:
-                return errors
-    return errors
+    return regression_issue_details(
+        comparisons,
+        count_field="new_issue_count",
+        details_field="new_details",
+        limit=limit,
+        fallback_classification="Failed: PR regression",
+        fallback_details_field="details",
+        default_message="New ERROR detected.",
+    )
 
 
 def dynamic_error_detail(
@@ -1397,28 +1506,13 @@ def dynamic_new_warnings(
     comparisons: Sequence[object],
     limit: int,
 ) -> List[Tuple[str, str, str]]:
-    warnings = []
-    for comparison in comparisons:
-        if not isinstance(comparison, dict):
-            continue
-        new_warning_count = count_regression_field(
-            [comparison],
-            "new_warning_count",
-        )
-        if not new_warning_count:
-            continue
-
-        details = string_list(comparison.get("new_warning_details"))
-        if not details:
-            details = [str(comparison.get("message") or "New warning detected.")]
-
-        example = str(comparison.get("example") or "")
-        check = str(comparison.get("check") or "")
-        for detail in details[:new_warning_count]:
-            warnings.append((example, check, detail))
-            if len(warnings) == limit:
-                return warnings
-    return warnings
+    return regression_issue_details(
+        comparisons,
+        count_field="new_warning_count",
+        details_field="new_warning_details",
+        limit=limit,
+        default_message="New warning detected.",
+    )
 
 
 def regression_error_summary_row(
