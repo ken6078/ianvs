@@ -1,6 +1,13 @@
 # Example Status Directions
 
-The [Example Classification Matrix](../../examples/README.md) is the maintainer-facing health summary. This page defines its status badges, lifecycle meanings, and interpretation rules. The detailed CI artifacts remain the evidence source behind each status.
+Inventory status and published example health are related but distinct.
+Inventory status is maintained policy input for each benchmark unit. Published
+health combines that inventory state with the latest complete T2/T3 validation
+evidence and aggregates it by top-level example.
+
+The [Example Classification Matrix](../../examples/README.md) is the
+maintainer-facing published summary. Detailed CI artifacts remain the evidence
+behind each status.
 
 See also:
 
@@ -8,9 +15,18 @@ See also:
 - [Classification policy](classification_policy.md)
 - [Local validation](local_validation.md)
 
-## Status model
+## Inventory lifecycle status
 
-![Example status transition standard](../proposals/scenarios/example-restoration/phase-3-2026-term-2/images/example-status-STD.png)
+Each inventory entry has a lifecycle `status`. Only `active` entries are
+eligible to execute dynamic stages; selected inactive entries are reported as
+`SKIP`. Lifecycle status describes a benchmark unit's maintained state and is
+not itself a validator check result or a published top-level badge.
+
+See [inventory rules](validation_rules.md#inventory-rules) and
+[validation concepts](validation_rules.md#validation-concepts) for the
+authoritative contract.
+
+## Published status badges
 
 | Badge | Meaning |
 | --- | --- |
@@ -23,7 +39,7 @@ See also:
 | ![Quarantined](https://img.shields.io/badge/status-Quarantined-8a2be2) | Dynamic validation is intentionally disabled pending repair or a maintainer decision. |
 | ![Known issue](https://img.shields.io/badge/status-Known%20issue-critical) | A failure has been triaged and accepted temporarily. |
 
-## Published snapshot aggregation
+## Aggregation precedence
 
 Inventory status is policy input, while the current published snapshot is derived from the top-level example's validation evidence with this precedence:
 
@@ -36,8 +52,6 @@ Inventory status is policy input, while the current published snapshot is derive
 | A unit is `onGoing` | `Example onGoing` |
 | A unit is `unvalidated`, or the group has no matching result | `CI/CD onGoing` |
 | Otherwise | `Runnable` |
-
-The report generator recognizes external-resource and `broken` inventory values in its health-display vocabulary, but the current workflow's snapshot aggregator does not publish those badges from the inventory value alone. In particular, `Broken` requires a matched blocking result; a top-level example group with no matching result falls back to `CI/CD onGoing`.
 
 ## Broken reasons
 
@@ -53,7 +67,7 @@ Other report-level reasons, including hardware assumptions and metric edge cases
 ## How to interpret the matrix
 
 - Each benchmark job/YAML is an independent inventory and validation unit, even when rows are visually grouped under one top-level example.
-- The current published badge snapshot is aggregated by the top-level `example` value. If any validated benchmark job in that group has a blocking failure, the shared badge is `Broken`; inspect the report to identify the failing job. A future per-job snapshot format may expose the independent results directly in the matrix.
+- The current published badge snapshot is aggregated by the top-level `example` value. If any validated benchmark job in that group has a blocking failure, the shared badge is `Broken`; inspect the report to identify the failing job.
 - `Last T2/T3 Validation Time` is the timestamp of the latest published broad evidence, not the time of the last README edit.
 - T0/T1 results help review a pull request but do not replace T2/T3 health evidence.
 - `Runnable` means the validated path passed the checks in its configured tier. It is not a guarantee for every operating system, hardware combination, external resource, or undeclared Python version.
@@ -74,6 +88,16 @@ If a badge and a workflow report disagree, prefer the newest complete T2/T3 repo
 A full T2 pull-request run produces broad **base-branch** health evidence. That evidence may be published on the next scheduled planning run even if the pull request is still open or is never merged, because it validated the current main-branch target set. Publishing it resets the seven-day T3 cadence from the T2 validation time. The PR-head result remains PR review evidence and must not replace main-branch health.
 
 A later complete T3 run supersedes older T2 evidence. This latest-complete-result rule is important because an example can drift after a passing T2 without any repository change—for example, when a dependency, dataset, model, API, or runner environment changes.
+
+## Known limitations
+
+- Published snapshots are aggregated by top-level `example`; independent
+  per-benchmark badges are not currently published.
+- The report generator recognizes external-resource and `broken` inventory
+  values in its health-display vocabulary, but the current snapshot aggregator
+  does not publish those badges from the inventory value alone. `Broken`
+  requires a matched blocking result, and a top-level example group with no
+  matching result falls back to `CI/CD onGoing`.
 
 ## Status evidence policy
 

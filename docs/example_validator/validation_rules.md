@@ -8,6 +8,24 @@ See also:
 - [Local validation](local_validation.md)
 - [Example status directions](status_directions.md)
 
+## Validation concepts
+
+The validator keeps three machine concepts separate:
+
+- **Inventory lifecycle status** is maintained metadata and policy input. An
+  exact `status: active` value makes an entry eligible for dynamic stages;
+  other values describe inactive lifecycle states.
+- **Individual validator result** is the outcome of one check: `PASS`, `FAIL`,
+  `ERROR`, `WARNING`, or `SKIP`.
+- **Dynamic validation eligibility** determines whether selected entries execute
+  dynamic stages. A selected inactive entry receives a
+  `Dynamic validation eligibility: SKIP` result instead of executing those
+  stages.
+
+These concepts do not directly define pull-request impact or a published health
+badge. See [classification policy](classification_policy.md) and
+[status directions](status_directions.md), respectively.
+
 ## Result levels
 
 Each validator emits one of the following check results:
@@ -37,7 +55,9 @@ Every benchmark unit is represented by an inventory entry. An entry should decla
 
 The validation unit is a benchmark job, normally identified by one benchmarking YAML file. A top-level example may therefore have several inventory entries and several matrix rows. Do not collapse multiple jobs into one result merely because they share an example directory: their configurations and health can differ.
 
-Affected-example detection may select both active and inactive inventory entries. During a dynamic run, `validation_runner.py` executes dynamic stages only for active entries and emits a `Dynamic validation eligibility: SKIP` result for each selected inactive entry. Static validation may inspect explicitly selected inactive entries so maintainers can triage them.
+Affected-example detection may select both active and inactive inventory
+entries. Static validation may inspect an explicitly selected inactive entry;
+dynamic eligibility follows the rules above.
 
 `prepare_env.steps` is the supported environment-preparation schema for active,
 migrated targets. Legacy, unvalidated entries may still contain fields such as
@@ -62,7 +82,8 @@ Static checks do not execute the example. They inspect the entry, YAML, and Pyth
 | Device selection | Code that selects CUDA must also provide an availability check and CPU fallback. | `WARNING` |
 | Metric safety | Metrics that divide by a collection length should guard an empty collection. | `WARNING`; `SKIP` when no metric file exists |
 
-The current static scanner covers `.py`, `.yaml`, and `.yml` files. README requirements in the proposal remain a review requirement until Markdown-specific checks are implemented.
+The current static scanner covers `.py`, `.yaml`, and `.yml` files. It does not
+scan Markdown or enforce README-specific rules.
 
 ### Why a check is an error or a warning
 
@@ -72,33 +93,26 @@ The primary boundary is whether the detected condition is sufficient to prevent 
 - use `WARNING` for a portability, maintainability, security, or heuristic finding that may still allow execution;
 - do not promote a heuristic to an error merely because the pattern is undesirable. A false positive must not block a pull request.
 
-Warnings should normally be addressed during review. If a change is urgent and the example remains runnable, maintainers may accept a warning with a follow-up issue. The report must still retain the warning and its consequence.
-
-| Warning | Why it matters | Expected response |
-| --- | --- | --- |
-| Missing non-code path parent | A dataset or generated resource may not have been prepared yet. | Confirm the preparation contract or document an external resource. |
-| Hardcoded local path | The example may work only on the contributor's machine. | Use a repository-relative path, portable default, or explicit override. |
-| Local model path | The example may be non-portable and can encourage committing large model weights. | Use a model ID or configurable local override; do not commit weights. |
-| CUDA-only pattern | CPU runners may fail, but a regex can miss or misread nearby fallback logic. | Verify CUDA/MPS/CPU selection and treat a confirmed fallback as a false positive. |
-| Metric empty-pair pattern | Empty results may cause division by zero, but the static pattern is heuristic. | Add an explicit empty-pair result such as `0.0`; a reproduced crash is a runtime `FAIL`. |
-
-### Environment preparation contract
+## Environment preparation contract
 
 If `prepare_env` is present, it must contain a valid `working_directory` and a non-empty ordered `steps` list. Every step requires:
 
 ```yaml
-- name: prepare_dataset
-  type: dataset
-  script: scripts/02_prepare_dataset.py
-  args:
-    - --output-dir
-    - ../../dataset/llm_simple_qa
-  timeout: 300
+prepare_env:
+  working_directory: examples/llm_simple_qa
+  steps:
+    - name: prepare_dataset
+      type: dataset
+      script: scripts/02_prepare_dataset.py
+      args:
+        - --output-dir
+        - ../../dataset/llm_simple_qa
+      timeout: 300
 ```
 
 `args` must be an array of strings, `timeout` must be a positive integer, and the script must exist below the working directory. The environment preparation validator executes steps in order, without `shell=True`, stops at the first failure, and reports the step name and type. Each `prepare_env.steps[].timeout` applies to that step and is not overridden by the validation runner's CLI `--timeout`.
 
-### Mock Runtime contract
+## Mock Runtime contract
 
 When `mock_runtime.enabled` is `true`, both `shared_pythonpath` and `example_pythonpath` must be non-empty path arrays whose directories exist inside the repository. Adapter selection and semantic responses belong to the example fixture, not the inventory.
 
@@ -108,7 +122,8 @@ Dependency validation checks the declared requirements file independently of env
 
 - the declared file exists and is not empty;
 - requirement lines are syntactically valid;
-- environment markers are compatible with the current Python interpreter;
+- environment markers allow at least one supported Python version in the
+  validator's default `3.8`, `3.9`, and `3.10` matrix;
 - imports used by the example runtime are covered by dependency declarations;
 - optionally, pip can resolve or install the requirements.
 
@@ -119,8 +134,6 @@ The install modes are:
 | no install option | Validate declarations only. |
 | `--pip-install-check` | Run pip's dry-run resolution check. |
 | `--pip-install` | Install the declared requirements into the current environment. |
-
-Use a disposable virtual environment with `--pip-install`; it changes that environment.
 
 The validation runner's CLI `--timeout` applies to pip resolution or
 installation commands and runtime smoke execution. It is also passed to the
@@ -144,15 +157,8 @@ The implemented JSONL rules are:
 - every row must decode to a JSON object;
 - an empty training file is allowed for examples that do not train.
 
-Field-level schema validation, such as requiring `question` and `answer`, is not currently enforced by the shared validator. Examples should document their schema, and a future validator change may make these fields machine-enforced.
-
-For `llm_simple_qa`, the expected layout is:
-
-```text
-dataset/llm_simple_qa/
-├── train_data/data.jsonl
-└── test_data/data.jsonl
-```
+Field-level schema validation, such as requiring `question` and `answer`, is
+not currently enforced by the shared validator.
 
 ## Smoke validation
 
@@ -183,4 +189,7 @@ The repository uses these validation levels:
 
 The static workflow currently triggers for changed example Python or YAML files. The dynamic workflow event filter covers `examples/**`, `core/**`, `.github/workflows/validator/**`, and `.github/workflows/dynamic_code_cicd.yaml`. Although `inventory_loader.py` treats every `.github/workflows/` path as a dynamic run-all prefix when invoked, changes to other workflow files do not trigger the current dynamic workflow. Scheduled planning runs daily and uses a seven-day broad-validation cadence. Generated reports and status snapshots are the evidence for classification; a passing mocked check must retain its `mocked_llm` label.
 
-T0 intentionally focuses on inexpensive code/configuration checks for the changed example. Documentation-only change detection, Markdown-specific validation, deeper parsing of GPU declarations such as runtime configuration fields, and broader static semantic analysis are future extensions. T2/T3 status must be based on dynamic evidence rather than inferred from a T0 pass.
+T0 does not select documentation-only changes and does not perform
+Markdown-specific validation, deep parsing of runtime GPU declarations, or
+broader static semantic analysis. T2/T3 status is based on dynamic evidence,
+not inferred from a T0 pass.
