@@ -161,6 +161,23 @@ coverage. See the authoritative
 [inventory rules](../../../docs/example_validator/validation_rules.md#inventory-rules)
 for the complete contract.
 
+## Future Work
+
+These are design directions, not current validator capabilities:
+
+- extensible validator interfaces and versioned schemas;
+- broader Markdown, semantic, hardware, and dataset validation;
+- stronger execution isolation, security, retry, and caching controls;
+- complete local multi-job validation after the
+  [`act#6114`](https://github.com/nektos/act/issues/6114) artifact blocker is
+  resolved; and
+- validation history, cross-environment comparison, and per-benchmark health.
+
+See the [proposal](../../../docs/proposals/scenarios/example-restoration/phase-3-2026-term-2/proposal.md)
+for the broader roadmap and the
+[local guide](../../../docs/example_validator/local_validation.md#optional-workflow-inspection-with-act)
+for the current `act` limitation.
+
 ## Documentation
 
 | If you want to... | Read |
