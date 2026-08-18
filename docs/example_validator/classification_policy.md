@@ -4,7 +4,7 @@ Ianvs separates three concepts that answer different questions:
 
 1. A **check result** (`PASS`, `FAIL`, `ERROR`, `WARNING`, or `SKIP`) describes one validator rule.
 2. A **PR-impact classification** determines whether a result is newly introduced by a pull request.
-3. An **example status** summarizes the published, top-level example health over time.
+3. **Published example health** is a separate aggregation and publication concern documented in [status directions](status_directions.md).
 
 This separation prevents historical failures from blocking unrelated contributions while keeping maintenance debt visible.
 
@@ -68,38 +68,6 @@ Maintainers should:
 3. choose an accurate inventory status, such as `known issue`, `quarantined`, `requires_external_resource`, or `requires_hardware`;
 4. create a follow-up issue when restoration is wanted;
 5. return the entry to `active` only after the relevant validation tier passes.
-
-## Example lifecycle statuses
-
-The inventory uses machine-friendly values that the health report maps to display statuses.
-
-| Inventory value | Display status | Intended use |
-| --- | --- | --- |
-| `active` | `Runnable` after a passing broad result | Executes dynamic validation when selected |
-| `unvalidated` | `CI/CD onGoing` | Inventory exists, but a selected dynamic run reports it as `SKIP` |
-| `onGoing` | `Example onGoing` | The example implementation is still in progress |
-| `requires_external_resource` or `external` | `Requires external dataset or model download` | Normal CI cannot obtain a required resource |
-| `requires_hardware` or `hardware` | `Requires GPU or special hardware` | Normal runners do not provide required hardware |
-| `quarantined` | `Quarantined` | Validation is intentionally disabled pending repair |
-| `known_issue` or `known issue` | `Known issue` | A triaged defect is accepted temporarily |
-| `broken` | `Broken` | Broad validation confirms an unhandled failure |
-
-Inventory entries and validator results are maintained at benchmark-job/YAML
-level. Published status snapshots and badges currently aggregate those units by
-the top-level `example` value. If any validated unit in that group has a
-blocking T2/T3 failure, the shared badge is `Broken`; a passing sibling cannot
-hide it. Independent per-benchmark published badges are not implemented yet.
-Passing an individual T0 or T1 run does not by itself establish `Runnable`
-status.
-
-## Status update policy
-
-- Use the inventory as the maintained policy source and generated T2/T3 snapshots as validation evidence.
-- Do not label a mocked LLM run as evidence of a real model or provider passing.
-- Do not use resource or hardware statuses to hide an ordinary reproducible software defect.
-- Record constraints and follow-up references in inventory metadata or the tracking issue.
-- Broad repair of examples other than the explicit `llm_simple_qa` restoration target belongs in separate issues or proposals.
-- When a failure is fixed, rerun the highest practical tier and keep the resulting report or snapshot as evidence.
 
 ## Maintainer triage
 

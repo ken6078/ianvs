@@ -94,31 +94,13 @@ CLI `--timeout` controls dependency installation or resolution checks and the
 runtime smoke command. Each `prepare_env.steps[].timeout` controls only that
 preparation step and is not overridden by CLI `--timeout`.
 
-## Inventory preparation contract
-
-The supported environment-preparation schema is:
-
-```yaml
-prepare_env:
-  working_directory: examples/llm_simple_qa
-  steps:
-    - name: prepare_dataset
-      type: dataset
-      script: scripts/02_prepare_dataset.py
-      args:
-        - --output-dir
-        - ../../dataset/llm_simple_qa
-      timeout: 300
-```
-
-Active, migrated validation targets use ordered `prepare_env.steps`. Legacy,
-unvalidated inventory entries may still contain fields such as
-`dataset.prepare_script: null` because they have not been migrated. Do not use
-that legacy field as the model for new or activated targets. For entries with
-no `prepare_env` mapping, smoke validation retains a backward-compatible
-fallback to `dataset.prepare_script`.
+For the supported `prepare_env.steps` schema, step validation rules, and legacy compatibility behavior, see the [environment preparation contract](validation_rules.md#environment-preparation-contract).
 
 ## Reports and exit codes
+
+Human-readable output summarizes the structured JSON results. Diagnostics identify the affected path and line when available, using forms such as `path/to/file -> (Line 31): offending value`. Markdown regression details show at most the first ten diagnostics and report the remaining count; inspect the JSON artifact when a summary is truncated.
+
+CI preserves base and head result artifacts even when an individual validator command exits non-zero. A `Collected Result Files` section lists those benchmark-unit JSON artifacts, not every source file changed by the contributor. The later comparison job makes the pull-request regression decision.
 
 Markdown is printed to standard output by default. Save either Markdown or JSON with `--report`:
 
