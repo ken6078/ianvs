@@ -406,6 +406,16 @@ examples:
     structure:
       - "train_data/data.jsonl"
       - "test_data/data.jsonl"
+- name: validator_demo_fail
+  example: "validator_demo_fail"
+  status: active
+  python_version: "3.8"
+  path: "examples/validator_demo_fail"
+  readme_file: "examples/validator_demo_fail/README.md"
+  benchmark_file: "examples/validator_demo_fail/benchmarkingjob.yaml"
+  requirements_file: null
+  dataset:
+    prepare_script: null
 - name: fpn_incremental_learning
   example: "pcb-aoi"
   status: unvalidated
