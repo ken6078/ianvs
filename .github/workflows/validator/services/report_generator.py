@@ -1544,16 +1544,16 @@ def dynamic_error_problem(check: str, detail: str) -> str:
     problem = detail.strip()
     if check == "Smoke benchmark config exists":
         return "Can't find the benchmark file{}".format(
-            ": {}".format(problem) if problem else ""
+            ": `{}`".format(problem) if problem else ""
         )
     if check == "Dependency file exists":
         return "Can't find the dependency file{}".format(
-            ": {}".format(problem) if problem else ""
+            ": `{}`".format(problem) if problem else ""
         )
     if check == "Dataset preparation" and problem:
-        return "Can't find the dataset preparation script: {}".format(problem)
+        return "Can't find the dataset preparation script: `{}`".format(problem)
     if check == "JSONL dataset structure" and problem.endswith(": file is missing"):
-        return "Can't find the dataset file: {}".format(
+        return "Can't find the dataset file: `{}`".format(
             problem[: -len(": file is missing")]
         )
 
