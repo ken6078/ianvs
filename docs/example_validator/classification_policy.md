@@ -12,7 +12,12 @@ See [validation rules](validation_rules.md) for individual checks and [status di
 
 ## Pull request comparison
 
-CI runs the same selected checks against the pull request base and head revisions. The regression detector compares issues by example, check, file, and diagnostic detail. Line mappings from the Git diff are used so an unchanged issue is not treated as new merely because surrounding lines moved.
+CI selects validation targets independently from the base and head revisions'
+inventories, so the two target sets are not required to match. For validation
+units present on both sides, the regression detector compares issues by unit,
+check, file, and diagnostic detail. Line mappings from the Git diff are used so
+an unchanged issue is not treated as new merely because surrounding lines
+moved.
 
 | Base | PR head | Classification | Blocks the PR |
 | --- | --- | --- | --- |
@@ -25,7 +30,27 @@ CI runs the same selected checks against the pull request base and head revision
 
 Only newly introduced `FAIL` or `ERROR` details make the regression job fail. Warnings are reported but do not block a pull request.
 
-If a base report is missing or otherwise cannot be compared reliably, maintainers should inspect the raw artifacts instead of assuming the head failure is historical.
+## Validation unit lifecycle changes
+
+The stable validation-unit identity is the inventory `name` plus `path`. A
+missing individual check does not add or remove a unit.
+
+| Base unit | Head unit | Reported change | PR impact |
+| --- | --- | --- | --- |
+| Absent | Active and passing | Added, passed | Does not block |
+| Absent | Active with `FAIL` or `ERROR` | Added, PR regression | Blocks |
+| Absent | Inactive eligibility `SKIP` | Added, skipped with inventory status | Does not block |
+| Present | Absent | Removed with previous base state | Does not block solely because of removal |
+
+The regression report lists added and removed units separately from
+check-level comparisons. Without another stable identifier, a rename is shown
+as removal of the old identity and addition of the new identity; no fuzzy
+rename matching is attempted.
+
+Absence from the base inventory is a legitimate Added-unit case. If a unit was
+selected from the base inventory but its expected result artifact is missing or
+cannot be compared reliably, maintainers should inspect the raw artifacts
+instead of assuming the head failure is historical.
 
 ## Failure causes
 

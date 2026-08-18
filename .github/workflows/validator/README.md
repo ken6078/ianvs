@@ -119,7 +119,9 @@ troubleshooting, see the
 
 Current workflows publish a Markdown report to the GitHub Step Summary and
 upload JSON and Markdown artifacts. Pull-request reports also include the
-base-versus-head regression classification.
+base-versus-head regression classification. Base and head validation select
+targets from their own revision's inventory, so the report can identify added
+and removed benchmark units as well as check-level regressions.
 
 ![Ianvs dynamic validation report showing a newly introduced parser error](images/github-step-summary.png)
 

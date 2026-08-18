@@ -85,7 +85,7 @@ aggregated status, validation timestamp, and source commit.
 
 If a badge and a workflow report disagree, prefer the newest complete T2/T3 report, verify that snapshot publication succeeded, and then refresh or repair the status branch. Do not manually claim a passing status without matching validation evidence.
 
-A full T2 pull-request run produces broad **base-branch** health evidence. That evidence may be published on the next scheduled planning run even if the pull request is still open or is never merged, because it validated the current main-branch target set. Publishing it resets the seven-day T3 cadence from the T2 validation time. The PR-head result remains PR review evidence and must not replace main-branch health.
+A full T2 pull-request run produces broad **base-branch** health evidence. Its completeness is checked against the complete target set selected from the base revision's inventory; head-only additions are not expected base results. That evidence may be published on the next scheduled planning run even if the pull request is still open or is never merged, because it validated the current main-branch target set. Publishing it resets the seven-day T3 cadence from the T2 validation time. The PR-head result remains PR review evidence and must not replace main-branch health.
 
 A later complete T3 run supersedes older T2 evidence. This latest-complete-result rule is important because an example can drift after a passing T2 without any repository change—for example, when a dependency, dataset, model, API, or runner environment changes.
 

@@ -43,8 +43,9 @@ Modes:
         from the inventory.
 
 GitHub Actions outputs:
-    mode, run_all, examples_changed, changed_examples, validation_matrix,
-    changed_files, check_items
+    mode, run_all, examples_changed, base_examples_changed,
+    head_examples_changed, base_changed_examples, head_changed_examples,
+    base_validation_matrix, head_validation_matrix, changed_files
 """
 
 import argparse
@@ -96,11 +97,17 @@ def parse_scalar(value: str):
 
 
 def load_inventory_without_pyyaml(inventory_path: Path) -> Dict[str, List[dict]]:
+    return load_inventory_text_without_pyyaml(
+        inventory_path.read_text(encoding="utf-8")
+    )
+
+
+def load_inventory_text_without_pyyaml(text: str) -> Dict[str, List[dict]]:
     inventory = {"examples": []}
     current_example = None
     current_nested_key = None
 
-    for raw_line in inventory_path.read_text(encoding="utf-8").splitlines():
+    for raw_line in text.splitlines():
         if not raw_line.strip() or raw_line.lstrip().startswith("#"):
             continue
 
@@ -140,17 +147,39 @@ def load_inventory_without_pyyaml(inventory_path: Path) -> Dict[str, List[dict]]
 
 
 def load_inventory(inventory_path: Path) -> Dict[str, List[dict]]:
+    return load_inventory_text(inventory_path.read_text(encoding="utf-8"))
+
+
+def load_inventory_text(text: str) -> Dict[str, List[dict]]:
     try:
         import yaml
     except ImportError:
-        return load_inventory_without_pyyaml(inventory_path)
+        return load_inventory_text_without_pyyaml(text)
 
-    data = yaml.safe_load(inventory_path.read_text(encoding="utf-8")) or {}
+    data = yaml.safe_load(text) or {}
     return data
 
 
 def load_inventory_examples(inventory_path: Path, active_only: bool = True) -> List[dict]:
-    inventory = load_inventory(inventory_path)
+    return inventory_examples(load_inventory(inventory_path), active_only)
+
+
+def load_inventory_examples_at_ref(
+    inventory_path: Path,
+    revision: str,
+    active_only: bool = True,
+) -> List[dict]:
+    inventory_text = subprocess.check_output(
+        ["git", "show", "{}:{}".format(revision, inventory_path.as_posix())],
+        text=True,
+    )
+    return inventory_examples(load_inventory_text(inventory_text), active_only)
+
+
+def inventory_examples(
+    inventory: Dict[str, List[dict]],
+    active_only: bool = True,
+) -> List[dict]:
     examples = inventory.get("examples") or []
     selected_examples = []
 
@@ -442,10 +471,20 @@ def detect_changes(
     head_ref: str,
     mode: str,
     inventory_path: Path,
+    base_inventory_ref: str = "",
 ) -> dict:
-    examples = load_inventory_examples(
+    head_examples = load_inventory_examples(
         inventory_path,
         active_only=False,
+    )
+    base_examples = (
+        load_inventory_examples_at_ref(
+            inventory_path,
+            base_inventory_ref,
+            active_only=False,
+        )
+        if base_inventory_ref
+        else head_examples
     )
     changed_files = git_lines(["diff", "--name-only", base_ref, head_ref])
     if mode == MODE_STATIC:
@@ -456,16 +495,38 @@ def detect_changes(
         ]
 
     run_all = mode == MODE_DYNAMIC and should_run_all_dynamic(changed_files)
-    changed_examples = detect_static_examples(changed_files, examples)
-    selected_examples = examples if run_all else changed_examples
-    return inventory_selection_report(
+    base_changed_examples = detect_static_examples(changed_files, base_examples)
+    head_changed_examples = detect_static_examples(changed_files, head_examples)
+    base_selected_examples = base_examples if run_all else base_changed_examples
+    head_selected_examples = head_examples if run_all else head_changed_examples
+    base_report = inventory_selection_report(
         mode=mode,
-        examples=selected_examples,
+        examples=base_selected_examples,
         run_all=run_all,
         changed_files=changed_files,
         base_ref=base_ref,
         head_ref=head_ref,
     )
+    head_report = inventory_selection_report(
+        mode=mode,
+        examples=head_selected_examples,
+        run_all=run_all,
+        changed_files=changed_files,
+        base_ref=base_ref,
+        head_ref=head_ref,
+    )
+    return {
+        **head_report,
+        "examples_changed": bool(base_selected_examples or head_selected_examples),
+        "base_examples_changed": bool(base_selected_examples),
+        "head_examples_changed": bool(head_selected_examples),
+        "base_changed_examples": base_report["changed_examples"],
+        "head_changed_examples": head_report["changed_examples"],
+        "base_validation_matrix": base_report["validation_matrix"],
+        "head_validation_matrix": head_report["validation_matrix"],
+        "base_check_items": base_report["check_items"],
+        "head_check_items": head_report["check_items"],
+    }
 
 
 def export_github_outputs(report: dict, output_path: str) -> None:
@@ -478,6 +539,12 @@ def export_github_outputs(report: dict, output_path: str) -> None:
             ),
             file=output,
         )
+        for key in ("base_examples_changed", "head_examples_changed"):
+            if key in report:
+                print(
+                    "{}={}".format(key, "true" if report[key] else "false"),
+                    file=output,
+                )
         print(
             "changed_examples={}".format(json.dumps(report["changed_examples"])),
             file=output,
@@ -486,6 +553,16 @@ def export_github_outputs(report: dict, output_path: str) -> None:
             "validation_matrix={}".format(json.dumps(report["validation_matrix"])),
             file=output,
         )
+        for key in (
+            "base_changed_examples",
+            "head_changed_examples",
+            "base_validation_matrix",
+            "head_validation_matrix",
+            "base_check_items",
+            "head_check_items",
+        ):
+            if key in report:
+                print("{}={}".format(key, json.dumps(report[key])), file=output)
         print("changed_files={}".format(json.dumps(report["changed_files"])), file=output)
         print("check_items={}".format(json.dumps(report["check_items"])), file=output)
 
@@ -537,6 +614,14 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         "--inventory",
         default=DEFAULT_INVENTORY_PATH,
         help="Example inventory YAML path.",
+    )
+    parser.add_argument(
+        "--base-inventory-ref",
+        default="",
+        help=(
+            "Git revision from which to load the base inventory. When omitted, "
+            "the current inventory is used for both target sets."
+        ),
     )
     parser.add_argument(
         "--run-all",
@@ -620,6 +705,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             head_ref=args.head_ref,
             mode=args.mode,
             inventory_path=inventory_path,
+            base_inventory_ref=args.base_inventory_ref,
         )
 
     print_report(report)

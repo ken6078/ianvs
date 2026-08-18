@@ -76,10 +76,19 @@ class CheckResult:
     message: str = ""
     file: str = ""
     details: List[str] = field(default_factory=list)
+    example_name: str = ""
+
+    @property
+    def target_identity(self) -> Tuple[str, str]:
+        return self.example_name or self.example, self.example
 
     @property
     def identity(self) -> Tuple[str, str]:
         return self.example, self.name
+
+    @property
+    def unit_check_identity(self) -> Tuple[str, str, str]:
+        return self.target_identity + (self.name,)
 
     @property
     def issue_count(self) -> int:
@@ -133,6 +142,29 @@ class Comparison:
     pre_existing_warning_details: List[str] = field(default_factory=list)
     new_warning_details: List[str] = field(default_factory=list)
     fixed_warning_details: List[str] = field(default_factory=list)
+    example_name: str = ""
+
+
+@dataclass
+class ValidationUnit:
+    name: str
+    path: str
+
+    @property
+    def identity(self) -> Tuple[str, str]:
+        return self.name, self.path
+
+
+@dataclass
+class ExampleChange:
+    change: str
+    name: str
+    path: str
+    validation: str
+    classification: str
+    blocks_pr: bool
+    inventory_status: str = ""
+    previous_validation_state: str = ""
 
 
 @dataclass
@@ -140,10 +172,21 @@ class RegressionReport:
     comparisons: List[Comparison]
     base_files: List[str]
     head_files: List[str]
+    example_changes: List[ExampleChange] = field(default_factory=list)
 
     @property
     def blocks_pr(self) -> bool:
-        return any(comparison.blocks_pr for comparison in self.comparisons)
+        return any(comparison.blocks_pr for comparison in self.comparisons) or any(
+            change.blocks_pr for change in self.example_changes
+        )
+
+    @property
+    def added_example_count(self) -> int:
+        return sum(change.change == "Added" for change in self.example_changes)
+
+    @property
+    def removed_example_count(self) -> int:
+        return sum(change.change == "Removed" for change in self.example_changes)
 
     def count_classification(self, classification: str) -> int:
         return sum(
@@ -244,6 +287,11 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Continue when no base result files are found.",
     )
     parser.add_argument(
+        "--allow-missing-head",
+        action="store_true",
+        help="Continue when no head result files are found.",
+    )
+    parser.add_argument(
         "--no-fail",
         action="store_true",
         help="Exit 0 even when PR regressions are detected.",
@@ -261,7 +309,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     base_paths = discover_result_paths(args.base_results)
     head_paths = discover_result_paths(args.head_results)
 
-    if not head_paths:
+    if not head_paths and not args.allow_missing_head:
         print("No PR/head validation result JSON files were found.", file=sys.stderr)
         return 2
     if not base_paths and not args.allow_missing_base:
@@ -323,18 +371,31 @@ def compare_results(
     base_ref: str = "",
     head_ref: str = "",
 ) -> RegressionReport:
-    base_checks = load_checks(base_paths)
-    head_checks = load_checks(head_paths)
+    base_units, base_checks = load_results(base_paths)
+    head_units, head_checks = load_results(head_paths)
     comparisons = []
     line_mapper = GitLineMapper(base_ref, head_ref) if base_ref and head_ref else None
-    skipped_examples = dynamic_skipped_examples(base_checks) | dynamic_skipped_examples(
+    skipped_units = dynamic_skipped_units(base_checks) | dynamic_skipped_units(
         head_checks
     )
+
+    base_unit_ids = set(base_units)
+    head_unit_ids = set(head_units)
+    added_unit_ids = head_unit_ids - base_unit_ids
+    removed_unit_ids = base_unit_ids - head_unit_ids
+    example_changes = [
+        added_example_change(head_units[identity], head_checks)
+        for identity in sorted(added_unit_ids)
+    ] + [
+        removed_example_change(base_units[identity], base_checks)
+        for identity in sorted(removed_unit_ids)
+    ]
 
     identities = sorted(
         identity
         for identity in set(base_checks) | set(head_checks)
-        if identity[0] not in skipped_examples
+        if identity[:2] not in removed_unit_ids
+        and identity[:2] not in skipped_units
     )
     for identity in identities:
         base_check = base_checks.get(identity)
@@ -351,6 +412,7 @@ def compare_results(
         comparisons=comparisons,
         base_files=[path.as_posix() for path in base_paths],
         head_files=[path.as_posix() for path in head_paths],
+        example_changes=example_changes,
     )
 
 
@@ -364,31 +426,154 @@ def dynamic_skipped_examples(
     }
 
 
-def load_checks(paths: Sequence[Path]) -> Dict[Tuple[str, str], CheckResult]:
-    checks: Dict[Tuple[str, str], CheckResult] = {}
+def dynamic_skipped_units(
+    checks: Dict[Tuple[str, str, str], CheckResult],
+) -> set:
+    return {
+        check.target_identity
+        for check in checks.values()
+        if check.name == DYNAMIC_ELIGIBILITY_CHECK and check.status == SKIP
+    }
+
+
+def load_results(
+    paths: Sequence[Path],
+) -> Tuple[
+    Dict[Tuple[str, str], ValidationUnit],
+    Dict[Tuple[str, str, str], CheckResult],
+]:
+    units: Dict[Tuple[str, str], ValidationUnit] = {}
+    checks: Dict[Tuple[str, str, str], CheckResult] = {}
     for path in paths:
         payload = json.loads(path.read_text(encoding="utf-8"))
         for raw_example in payload.get("examples", []):
             if not isinstance(raw_example, dict):
                 continue
             example_path = str(raw_example.get("path") or raw_example.get("name") or "")
+            example_name = str(raw_example.get("name") or example_path)
+            unit = ValidationUnit(name=example_name, path=example_path)
+            units[unit.identity] = unit
             for raw_check in raw_example.get("checks", []):
                 if not isinstance(raw_check, dict):
                     continue
-                check = parse_check(raw_check, example=example_path)
-                checks[check.identity] = check
-    return checks
+                check = parse_check(
+                    raw_check,
+                    example=example_path,
+                    example_name=example_name,
+                )
+                checks[check.unit_check_identity] = check
+    return units, checks
 
 
-def parse_check(raw_check: Dict[str, object], example: str) -> CheckResult:
+def load_checks(paths: Sequence[Path]) -> Dict[Tuple[str, str], CheckResult]:
+    checks = load_results(paths)[1]
+    return {(check.example, check.name): check for check in checks.values()}
+
+
+def parse_check(
+    raw_check: Dict[str, object],
+    example: str,
+    example_name: str = "",
+) -> CheckResult:
     return CheckResult(
         example=example,
         name=str(raw_check.get("name", "")),
         status=str(raw_check.get("status", "")),
+        example_name=example_name,
         message=str(raw_check.get("message", "")),
         file=str(raw_check.get("file", "")),
         details=string_list(raw_check.get("details", [])),
     )
+
+
+def added_example_change(
+    unit: ValidationUnit,
+    checks: Dict[Tuple[str, str, str], CheckResult],
+) -> ExampleChange:
+    unit_checks = checks_for_unit(checks, unit.identity)
+    inventory_status = dynamic_inventory_status(unit_checks)
+    if any(check.status in BLOCKING_STATUSES for check in unit_checks):
+        return ExampleChange(
+            change="Added",
+            name=unit.name,
+            path=unit.path,
+            validation="Failed",
+            classification=CLASS_PR_REGRESSION,
+            blocks_pr=True,
+            inventory_status=inventory_status,
+        )
+    if any(
+        check.name == DYNAMIC_ELIGIBILITY_CHECK and check.status == SKIP
+        for check in unit_checks
+    ):
+        return ExampleChange(
+            change="Added",
+            name=unit.name,
+            path=unit.path,
+            validation="Skipped",
+            classification="Skipped / inactive",
+            blocks_pr=False,
+            inventory_status=inventory_status,
+        )
+    return ExampleChange(
+        change="Added",
+        name=unit.name,
+        path=unit.path,
+        validation="Passed",
+        classification=CLASS_PASSED,
+        blocks_pr=False,
+        inventory_status=inventory_status,
+    )
+
+
+def removed_example_change(
+    unit: ValidationUnit,
+    checks: Dict[Tuple[str, str, str], CheckResult],
+) -> ExampleChange:
+    unit_checks = checks_for_unit(checks, unit.identity)
+    return ExampleChange(
+        change="Removed",
+        name=unit.name,
+        path=unit.path,
+        validation="Removed",
+        classification="Removed",
+        blocks_pr=False,
+        inventory_status=dynamic_inventory_status(unit_checks),
+        previous_validation_state=validation_state(unit_checks),
+    )
+
+
+def checks_for_unit(
+    checks: Dict[Tuple[str, str, str], CheckResult],
+    identity: Tuple[str, str],
+) -> List[CheckResult]:
+    return [
+        check
+        for check_identity, check in checks.items()
+        if check_identity[:2] == identity
+    ]
+
+
+def validation_state(checks: Sequence[CheckResult]) -> str:
+    if any(check.status in BLOCKING_STATUSES for check in checks):
+        return "Failed"
+    if any(
+        check.name == DYNAMIC_ELIGIBILITY_CHECK and check.status == SKIP
+        for check in checks
+    ):
+        return "Skipped"
+    return "Passed"
+
+
+def dynamic_inventory_status(checks: Sequence[CheckResult]) -> str:
+    for check in checks:
+        if check.name != DYNAMIC_ELIGIBILITY_CHECK:
+            continue
+        for detail in check.details:
+            prefix = "inventory status:"
+            if detail.lower().startswith(prefix):
+                return detail[len(prefix):].strip()
+    return ""
 
 
 def string_list(value: object) -> List[str]:
@@ -406,6 +591,7 @@ def compare_check(
         return None
 
     example = (head_check or base_check).example
+    example_name = (head_check or base_check).example_name or example
     name = (head_check or base_check).name
     base_status = base_check.status if base_check else "MISSING"
     head_status = head_check.status if head_check else "MISSING"
@@ -498,6 +684,7 @@ def compare_check(
 
     return Comparison(
         example=example,
+        example_name=example_name,
         check=name,
         classification=classification,
         base_status=base_status,
@@ -796,6 +983,9 @@ def render_markdown(report: RegressionReport) -> str:
         "",
         "**PR blocking:** {}".format("Yes" if report.blocks_pr else "No"),
         "",
+        "- Added examples: {}".format(report.added_example_count),
+        "- Removed examples: {}".format(report.removed_example_count),
+        "",
         "| Current errors | Pre-existing errors | New errors | Fixed errors |",
         "|---:|---:|---:|---:|",
         "| {} | {} | {} | {} |".format(
@@ -806,6 +996,8 @@ def render_markdown(report: RegressionReport) -> str:
         ),
         "",
     ]
+
+    append_example_changes(lines, report.example_changes)
 
     blocking = [comparison for comparison in report.comparisons if comparison.new_issue_count > 0]
     baseline_debt = [
@@ -863,8 +1055,45 @@ def render_markdown(report: RegressionReport) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def append_example_changes(
+    lines: List[str],
+    changes: Sequence[ExampleChange],
+) -> None:
+    if not changes:
+        lines.extend(["Example changes: None", ""])
+        return
+
+    lines.extend(
+        [
+            "## Example Changes",
+            "",
+            "| Change | Example | Validation | Classification | Blocks PR |",
+            "|---|---|---|---|---|",
+        ]
+    )
+    for change in changes:
+        result = change.validation
+        if change.change == "Removed" and change.previous_validation_state:
+            result = "Removed (base: {})".format(change.previous_validation_state)
+        if change.inventory_status:
+            result = "{} (`{}`)".format(result, change.inventory_status)
+        lines.append(
+            "| {} | `{}` (`{}`) | {} | {} | {} |".format(
+                change.change,
+                change.path,
+                change.name,
+                result,
+                change.classification,
+                "Yes" if change.blocks_pr else "No",
+            )
+        )
+    lines.append("")
+
+
 def append_comparison(lines: List[str], comparison: Comparison) -> None:
-    lines.append("### `{}`".format(comparison.example))
+    lines.append(
+        "### `{}` (`{}`)".format(comparison.example, comparison.example_name)
+    )
     lines.append("")
     lines.append("- Check: `{}`".format(comparison.check))
     lines.append("- Classification: {}".format(comparison.classification))
@@ -911,11 +1140,27 @@ def render_json(report: RegressionReport) -> str:
         "pre_existing_error_count": report.pre_existing_error_count,
         "new_error_count": report.new_error_count,
         "fixed_error_count": report.fixed_error_count,
+        "added_example_count": report.added_example_count,
+        "removed_example_count": report.removed_example_count,
         "base_files": report.base_files,
         "head_files": report.head_files,
+        "example_changes": [
+            {
+                "change": change.change,
+                "name": change.name,
+                "path": change.path,
+                "validation": change.validation,
+                "classification": change.classification,
+                "blocks_pr": change.blocks_pr,
+                "inventory_status": change.inventory_status,
+                "previous_validation_state": change.previous_validation_state,
+            }
+            for change in report.example_changes
+        ],
         "comparisons": [
             {
                 "example": comparison.example,
+                "example_name": comparison.example_name,
                 "check": comparison.check,
                 "classification": comparison.classification,
                 "base_status": comparison.base_status,
