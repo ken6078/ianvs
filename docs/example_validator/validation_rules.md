@@ -39,6 +39,11 @@ The validation unit is a benchmark job, normally identified by one benchmarking 
 
 Dynamic validation only runs entries whose inventory status is `active`. Static validation may inspect explicitly selected inactive entries so maintainers can triage them.
 
+`prepare_env.steps` is the supported environment-preparation schema for active,
+migrated targets. Legacy, unvalidated entries may still contain fields such as
+`dataset.prepare_script: null` while awaiting migration; that legacy field is
+not the recommended schema for new or activated targets.
+
 ## Static validation
 
 Static checks do not execute the example. They inspect the entry, YAML, and Python files under the example path.
@@ -174,8 +179,8 @@ The repository uses these validation levels:
 
 | Tier | Selection | Checks |
 | --- | --- | --- |
-| T0 | Changed inventory examples | Static checks |
-| T1 | Example changed by a pull request | Dependencies, preparation, and smoke validation for that example |
+| T0 | Inventory examples with changed `.py`, `.yaml`, or `.yml` files below their example path | Static checks |
+| T1 | Example changed by a pull request | Dependencies, preparation, dataset, and smoke validation for that example |
 | T2 | Shared `core/` or workflow/validator changes | Dynamic validation for all active inventory targets |
 | T3 | Scheduled or main-branch broad run | Dynamic validation for all active inventory targets and health snapshot publication |
 

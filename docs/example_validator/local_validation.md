@@ -73,7 +73,14 @@ python .github/workflows/validator/validation_runner.py \
   --timeout 600
 ```
 
-This command installs example dependencies into the active environment, prepares the smoke dataset, validates JSONL, and executes Ianvs. The smoke run automatically enables the inventory-declared Mock LLM runtime; no model download, GPU, or API credential is required. The result must be read as `mocked_llm`, not real-model validation.
+This command runs four explicit stages:
+
+1. `--dependency --pip-install` validates and installs the example dependencies into the active environment.
+2. `--prepare-env` executes the ordered `prepare_env.steps` declared by the inventory.
+3. `--jsonl` validates the configured JSONL dataset.
+4. `--smoke` executes the runtime smoke test.
+
+The smoke run automatically enables the inventory-declared Mock LLM runtime; no model download, GPU, or API credential is required. The result must be read as `mocked_llm`, not real-model validation. Use a disposable environment because `--pip-install` changes installed packages.
 
 To validate preparation and smoke inputs without starting Ianvs:
 
@@ -85,6 +92,28 @@ python .github/workflows/validator/validation_runner.py \
   --no-execute-smoke \
   --example examples/llm_simple_qa
 ```
+
+## Inventory preparation contract
+
+The supported environment-preparation schema is:
+
+```yaml
+prepare_env:
+  working_directory: examples/llm_simple_qa
+  steps:
+    - name: prepare_dataset
+      type: dataset
+      script: scripts/02_prepare_dataset.py
+      args:
+        - --output-dir
+        - ../../dataset/llm_simple_qa
+      timeout: 300
+```
+
+Active, migrated validation targets use ordered `prepare_env.steps`. Legacy,
+unvalidated inventory entries may still contain fields such as
+`dataset.prepare_script: null` because they have not been migrated. Do not use
+that legacy field as the model for new or activated targets.
 
 ## Reports and exit codes
 
@@ -116,13 +145,15 @@ python .github/workflows/validator/services/inventory_loader.py \
   --head-ref HEAD
 ```
 
-Static detection considers changed `.py`, `.yaml`, and `.yml` files below inventory example paths. Dynamic detection selects changed examples and selects every active entry when `core/` or `.github/workflows/` changes.
+Static detection considers changed `.py`, `.yaml`, and `.yml` files below inventory example paths. It does not currently select README or other Markdown-only changes. Dynamic detection considers all changed files below example paths and expands the selection to all inventory entries when `core/` or `.github/workflows/` changes; only entries with `status: active` execute dynamic stages.
+
+The proposal's UC-01.1 document-only validation remains planned coverage. The current workflows do not implement Markdown-specific validation, so do not treat a documentation-only change as an implemented T0 runtime path.
 
 The merge-base-to-`HEAD` range answers which files belong to the contributor's change. The rebased validation branch answers a different question: whether those changes work with the latest upstream validation rules and shared core code. Both are needed—use the original merge-base range for ownership and the rebased state for execution.
 
 ## Validate against current upstream
 
-The proposal defines a future local wrapper that creates and cleans up a temporary rebased validation branch. That wrapper is not present in the repository yet. Until it is implemented, update and test a disposable branch manually:
+The proposal defines a future local wrapper that synchronizes the upstream baseline, creates a temporary rebased validation branch, runs affected-example validation, and cleans up safely. That wrapper is not present in the repository yet. Its workflow-level implementation depends on cross-job artifact handoff in `act`, which is currently blocked by [`nektos/act#6114`](https://github.com/nektos/act/issues/6114). Until the upstream fix is merged and available in an `act` release, use `validation_runner.py` directly. If needed, update and test a disposable branch manually:
 
 ```bash
 git remote get-url upstream
@@ -144,7 +175,7 @@ These commands change local Git branch state, so commit or stash intentional wor
 
 ## Run workflow jobs with act
 
-`act` is useful for checking workflow syntax and individual jobs, but GitHub-hosted permissions, artifact behavior, pull-request metadata, and runner images can differ locally.
+`act` is useful for checking workflow syntax and individual jobs, but it cannot currently run the complete Ianvs validation workflow. The workflows pass validation results between jobs with `actions/upload-artifact@v7` and `actions/download-artifact@v8`; [`nektos/act#6114`](https://github.com/nektos/act/issues/6114) causes this artifact handoff to fail. GitHub-hosted permissions, pull-request metadata, and runner images can also differ locally.
 
 List available jobs:
 
@@ -163,6 +194,16 @@ act pull_request \
 ```
 
 The VS Code `github-local-actions` extension can provide a UI for the same `act`-backed workflow. Always confirm the final result in GitHub Actions before merge.
+
+Do not downgrade the production workflows to older artifact actions or add an Ianvs-specific artifact workaround for local execution. After the [corresponding `act` fix](https://github.com/nektos/act/pull/6115) is merged and included in a usable release, the remaining proposal work is to implement:
+
+- complete local workflow orchestration;
+- validation artifact handoff between jobs;
+- synchronization and fetching of the upstream baseline;
+- creation of a temporary local validation branch;
+- rebasing contributor changes onto the latest upstream baseline;
+- affected-example validation on the rebased temporary branch; and
+- safe cleanup of the temporary branch after validation.
 
 ## Troubleshooting
 
