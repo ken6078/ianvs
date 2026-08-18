@@ -62,9 +62,6 @@ MAX_COMMENT_BODY_CHARS = 60000
 MAX_DYNAMIC_NEW_ERRORS = 10
 MAX_DYNAMIC_NEW_WARNINGS = 10
 RUNTIME_SMOKE_TEST_PREFIX = "Runtime smoke test"
-AUTOMATED_VALIDATION_ERROR_MESSAGE = (
-    "The automated validation run stopped because of a `{}`."
-)
 DYNAMIC_EXCEPTION_TYPE_RE = re.compile(
     r"(?<![A-Za-z0-9_.])"
     r"(?P<error_type>[A-Za-z_][A-Za-z0-9_.]*(?:Error|Exception))(?=:)",
@@ -1530,17 +1527,43 @@ def dynamic_error_detail(
     detail: str,
     runtime_artifact_links: Optional[Dict[str, str]] = None,
 ) -> str:
-    message = AUTOMATED_VALIDATION_ERROR_MESSAGE.format(
-        dynamic_error_type(check, detail)
-    )
+    problem = dynamic_error_problem(check, detail)
+    if not problem.endswith((".", "!", "?")):
+        problem += "."
     artifact_url = (runtime_artifact_links or {}).get(example)
     target_url = artifact_url or github_actions_run_url()
     if not target_url:
-        return "{} View execution logs.".format(message)
+        return "{} View execution logs.".format(problem)
     return "{} [View execution logs]({})".format(
-        message,
+        problem,
         target_url,
     )
+
+
+def dynamic_error_problem(check: str, detail: str) -> str:
+    problem = detail.strip()
+    if check == "Smoke benchmark config exists":
+        return "Can't find the benchmark file{}".format(
+            ": {}".format(problem) if problem else ""
+        )
+    if check == "Dependency file exists":
+        return "Can't find the dependency file{}".format(
+            ": {}".format(problem) if problem else ""
+        )
+    if check == "Dataset preparation" and problem:
+        return "Can't find the dataset preparation script: {}".format(problem)
+    if check == "JSONL dataset structure" and problem.endswith(": file is missing"):
+        return "Can't find the dataset file: {}".format(
+            problem[: -len(": file is missing")]
+        )
+
+    exception_match = DYNAMIC_EXCEPTION_TYPE_RE.match(problem)
+    if exception_match:
+        problem = problem[exception_match.end():].lstrip(": ")
+        problem = problem[:1].upper() + problem[1:]
+    if not problem:
+        problem = "{} detected".format(dynamic_error_type(check, detail))
+    return problem
 
 
 def dynamic_error_type(check: str, detail: str) -> str:
