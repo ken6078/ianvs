@@ -27,21 +27,6 @@ Only newly introduced `FAIL` or `ERROR` details make the regression job fail. Wa
 
 If a base report is missing or otherwise cannot be compared reliably, maintainers should inspect the raw artifacts instead of assuming the head failure is historical.
 
-### Design decision: do not share cached PR baselines
-
-The project considered storing one T2 base result and sharing it across pull requests to reduce repeated CI work. This was rejected because the same main-branch commit can produce different results after a dependency, dataset, model, API, network condition, or runner image changes.
-
-For example:
-
-```text
-cached base: PASS
-external dependency changes
-current PR head: FAIL
-wrong result: PR regression
-```
-
-CI therefore reruns base and head in the same validation window. T2 base results may still be reused for health publication and T3 scheduling, but not for later PR regression comparisons. Package or download caches are allowed because they cache inputs rather than old validation outcomes.
-
 ## Failure causes
 
 The reporter assigns a cause from the failed check and its diagnostics. Supported cause labels include:
@@ -72,3 +57,15 @@ Maintainers should:
 ## Maintainer triage
 
 When a report fails, first determine whether it is a PR regression. If it is, request a fix or explicitly approve an exception. If it is pre-existing or time-based, keep the pull request unblocked, update the example classification when needed, and track restoration separately.
+
+## Design rationale: do not share cached PR baselines
+
+CI reruns base and head in the same validation window instead of sharing one
+cached T2 base result across pull requests. A dependency, dataset, model, API,
+network condition, or runner image can change while the base commit remains the
+same; comparing a current head run with an older passing base could incorrectly
+classify external drift as a PR regression.
+
+T2 base results may still be reused for health publication and T3 scheduling,
+but not for later PR regression comparisons. Package and download caches are
+allowed because they cache inputs rather than previous validation conclusions.
