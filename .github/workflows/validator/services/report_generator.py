@@ -1562,13 +1562,19 @@ def dynamic_error_problem(check: str, detail: str) -> str:
             problem[: -len(": file is missing")]
         )
 
-    exception_match = DYNAMIC_EXCEPTION_TYPE_RE.match(problem)
-    if exception_match:
-        problem = problem[exception_match.end():].lstrip(": ")
-        problem = problem[:1].upper() + problem[1:]
-    if not problem:
-        problem = "{} detected".format(dynamic_error_type(check, detail))
-    return problem
+    return generic_dynamic_error_problem(check, detail)
+
+
+def generic_dynamic_error_problem(check: str, detail: str) -> str:
+    state = (
+        "validator execution"
+        if check == "Validation runner internal error"
+        else check.strip() or "dynamic validation"
+    )
+    return "Workflow raises a `{}` during `{}`".format(
+        dynamic_error_type(check, detail),
+        state,
+    )
 
 
 def dynamic_error_type(check: str, detail: str) -> str:
