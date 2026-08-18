@@ -37,12 +37,14 @@ Every benchmark unit is represented by an inventory entry. An entry should decla
 
 The validation unit is a benchmark job, normally identified by one benchmarking YAML file. A top-level example may therefore have several inventory entries and several matrix rows. Do not collapse multiple jobs into one result merely because they share an example directory: their configurations and health can differ.
 
-Dynamic validation only runs entries whose inventory status is `active`. Static validation may inspect explicitly selected inactive entries so maintainers can triage them.
+Affected-example detection may select both active and inactive inventory entries. During a dynamic run, `validation_runner.py` executes dynamic stages only for active entries and emits a `Dynamic validation eligibility: SKIP` result for each selected inactive entry. Static validation may inspect explicitly selected inactive entries so maintainers can triage them.
 
 `prepare_env.steps` is the supported environment-preparation schema for active,
 migrated targets. Legacy, unvalidated entries may still contain fields such as
 `dataset.prepare_script: null` while awaiting migration; that legacy field is
-not the recommended schema for new or activated targets.
+not the recommended schema for new or activated targets. When an entry has no
+`prepare_env` mapping, smoke validation retains a backward-compatible
+`dataset.prepare_script` preparation fallback.
 
 ## Static validation
 
@@ -94,7 +96,7 @@ If `prepare_env` is present, it must contain a valid `working_directory` and a n
   timeout: 300
 ```
 
-`args` must be an array of strings, `timeout` must be a positive integer, and the script must exist below the working directory. The environment preparation validator executes steps in order, without `shell=True`, stops at the first failure, and reports the step name and type.
+`args` must be an array of strings, `timeout` must be a positive integer, and the script must exist below the working directory. The environment preparation validator executes steps in order, without `shell=True`, stops at the first failure, and reports the step name and type. Each `prepare_env.steps[].timeout` applies to that step and is not overridden by the validation runner's CLI `--timeout`.
 
 ### Mock Runtime contract
 
@@ -120,9 +122,18 @@ The install modes are:
 
 Use a disposable virtual environment with `--pip-install`; it changes that environment.
 
+The validation runner's CLI `--timeout` applies to pip resolution or
+installation commands and runtime smoke execution. It is also passed to the
+legacy `dataset.prepare_script` fallback, but not to `prepare_env.steps`.
+
 ## Dataset and JSONL validation
 
 The validator discovers JSONL files from inventory `dataset.root` plus `dataset.structure`, falling back to the test environment configuration when necessary.
+
+`--jsonl` runs this validation as an independent stage without runtime smoke
+execution. `--smoke` performs the same JSONL structure checks before it starts
+the runtime command, so the current CI dynamic command does not also pass
+`--jsonl`.
 
 The implemented JSONL rules are:
 
@@ -180,10 +191,10 @@ The repository uses these validation levels:
 | Tier | Selection | Checks |
 | --- | --- | --- |
 | T0 | Inventory examples with changed `.py`, `.yaml`, or `.yml` files below their example path | Static checks |
-| T1 | Example changed by a pull request | Dependencies, preparation, dataset, and smoke validation for that example |
-| T2 | Shared `core/` or workflow/validator changes | Dynamic validation for all active inventory targets |
-| T3 | Scheduled or main-branch broad run | Dynamic validation for all active inventory targets and health snapshot publication |
+| T1 | Changed inventory entries | Active entries execute dynamic validation; inactive entries are reported as `SKIP` |
+| T2 | Changes below `core/**`, `.github/workflows/validator/**`, or `.github/workflows/dynamic_code_cicd.yaml` | All inventory entries are selected; active entries execute dynamic validation and inactive entries are reported as `SKIP` |
+| T3 | Scheduled run, push to `main`, or manual workflow dispatch | Dynamic validation for all active inventory targets and health snapshot publication |
 
-The static workflow currently triggers for changed example Python or YAML files. The dynamic workflow triggers for changes below `examples/`, `core/`, the validator, or its workflow. Scheduled planning runs daily and uses a seven-day broad-validation cadence. Generated reports and status snapshots are the evidence for classification; a passing mocked check must retain its `mocked_llm` label.
+The static workflow currently triggers for changed example Python or YAML files. The dynamic workflow event filter covers `examples/**`, `core/**`, `.github/workflows/validator/**`, and `.github/workflows/dynamic_code_cicd.yaml`. Although `inventory_loader.py` treats every `.github/workflows/` path as a dynamic run-all prefix when invoked, changes to other workflow files do not trigger the current dynamic workflow. Scheduled planning runs daily and uses a seven-day broad-validation cadence. Generated reports and status snapshots are the evidence for classification; a passing mocked check must retain its `mocked_llm` label.
 
 T0 intentionally focuses on inexpensive code/configuration checks for the changed example. Documentation-only change detection, Markdown-specific validation, deeper parsing of GPU declarations such as runtime configuration fields, and broader static semantic analysis are future extensions. T2/T3 status must be based on dynamic evidence rather than inferred from a T0 pass.

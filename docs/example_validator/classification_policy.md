@@ -4,7 +4,7 @@ Ianvs separates three concepts that answer different questions:
 
 1. A **check result** (`PASS`, `FAIL`, `ERROR`, `WARNING`, or `SKIP`) describes one validator rule.
 2. A **PR-impact classification** determines whether a result is newly introduced by a pull request.
-3. An **example status** summarizes the maintained health of an example over time.
+3. An **example status** summarizes the published, top-level example health over time.
 
 This separation prevents historical failures from blocking unrelated contributions while keeping maintenance debt visible.
 
@@ -75,8 +75,8 @@ The inventory uses machine-friendly values that the health report maps to displa
 
 | Inventory value | Display status | Intended use |
 | --- | --- | --- |
-| `active` | `Runnable` after a passing broad result | Included in dynamic validation |
-| `unvalidated` | `CI/CD onGoing` | Inventory exists, but dynamic coverage is not active |
+| `active` | `Runnable` after a passing broad result | Executes dynamic validation when selected |
+| `unvalidated` | `CI/CD onGoing` | Inventory exists, but a selected dynamic run reports it as `SKIP` |
 | `onGoing` | `Example onGoing` | The example implementation is still in progress |
 | `requires_external_resource` or `external` | `Requires external dataset or model download` | Normal CI cannot obtain a required resource |
 | `requires_hardware` or `hardware` | `Requires GPU or special hardware` | Normal runners do not provide required hardware |
@@ -84,9 +84,13 @@ The inventory uses machine-friendly values that the health report maps to displa
 | `known_issue` or `known issue` | `Known issue` | A triaged defect is accepted temporarily |
 | `broken` | `Broken` | Broad validation confirms an unhandled failure |
 
-An active entry is displayed as `Broken` when its published T2/T3 result contains a blocking failure. Passing an individual T0 or T1 run does not by itself establish repository-wide `Runnable` status.
-
-Classification is maintained at benchmark-job/YAML level even when the public matrix visually groups rows under one top-level example. If one example has multiple benchmarking YAML files, each one needs its own inventory entry and result so a passing job cannot hide a failing sibling.
+Inventory entries and validator results are maintained at benchmark-job/YAML
+level. Published status snapshots and badges currently aggregate those units by
+the top-level `example` value. If any validated unit in that group has a
+blocking T2/T3 failure, the shared badge is `Broken`; a passing sibling cannot
+hide it. Independent per-benchmark published badges are not implemented yet.
+Passing an individual T0 or T1 run does not by itself establish `Runnable`
+status.
 
 ## Status update policy
 
