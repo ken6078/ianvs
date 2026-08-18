@@ -1542,6 +1542,11 @@ def dynamic_error_detail(
 
 def dynamic_error_problem(check: str, detail: str) -> str:
     problem = detail.strip()
+    exception_match = DYNAMIC_EXCEPTION_TYPE_RE.search(problem)
+    if check.startswith(RUNTIME_SMOKE_TEST_PREFIX) and exception_match:
+        return "Example execution raise a `{}`".format(
+            exception_match.group("error_type")
+        )
     if check == "Smoke benchmark config exists":
         return "Can't find the benchmark file{}".format(
             ": `{}`".format(problem) if problem else ""
