@@ -1,0 +1,14 @@
+testenv:
+  # dataset configuration
+  dataset:
+    # the url address of train dataset index; string type;
+    train_data: "./dataset/llm_simple_qa_alias/train_data/data.jsonl"
+    # the url address of test dataset index; string type;
+    test_data: "./dataset/llm_simple_qa_alias/test_data/data.jsonl"
+
+  # metrics configuration for test case's evaluation; list type;
+  metrics:
+      # metric name; string type;
+    - name: "acc"
+      # the url address of python file
+      url: "./examples/llm_simple_qa_alias/testenv/acc.py"

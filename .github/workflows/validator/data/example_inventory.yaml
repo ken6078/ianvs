@@ -406,6 +406,43 @@ examples:
     structure:
       - "train_data/data.jsonl"
       - "test_data/data.jsonl"
+- name: simple_qa_alias_singletask_learning
+  example: "llm_simple_qa_alias"
+  status: active
+  python_version: "3.8"
+  path: "examples/llm_simple_qa_alias"
+  readme_file: "examples/llm_simple_qa_alias/README.md"
+  benchmark_file: "examples/llm_simple_qa_alias/benchmarkingjob.yaml"
+  requirements_file: "examples/llm_simple_qa_alias/requirements.txt"
+  mock_runtime:
+    enabled: true
+    shared_pythonpath:
+      - ".github/workflows/validator/services/mock_runtime"
+    example_pythonpath:
+      - "examples/llm_simple_qa_alias/scripts/mock_runtime"
+  prepare_env:
+    working_directory: "examples/llm_simple_qa_alias"
+    steps:
+      - name: install_requirements
+        type: dependency
+        script: "scripts/01_install_requirements.sh"
+        args:
+          - "requirements.txt"
+        timeout: 600
+      - name: prepare_dataset
+        type: dataset
+        script: "scripts/02_prepare_dataset.py"
+        args:
+          - "--output-dir"
+          - "../../dataset/llm_simple_qa_alias"
+          - "--overwrite"
+          - "--smoke"
+        timeout: 300
+  dataset:
+    root: "dataset/llm_simple_qa_alias"
+    structure:
+      - "train_data/data.jsonl"
+      - "test_data/data.jsonl"
 - name: fpn_incremental_learning
   example: "pcb-aoi"
   status: unvalidated
