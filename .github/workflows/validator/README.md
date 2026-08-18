@@ -50,7 +50,6 @@ flowchart LR
     Regression --> Reporter[Report generator]
 
     Reporter --> Summary[GitHub Step Summary]
-    Reporter --> Comment[Pull request report]
     Reporter --> Artifacts[JSON and Markdown artifacts]
     Reporter --> Health[Example health snapshots]
 ```
@@ -66,7 +65,7 @@ flowchart LR
 | [`smoke_test_validator.py`](smoke_test_validator.py) | Runs ordered environment preparation, validates JSONL data, prepares temporary smoke configuration, and executes the runtime smoke path. |
 | [`services/inventory_loader.py`](services/inventory_loader.py) | Loads and normalizes inventory entries, detects affected examples, and builds CI matrices. |
 | [`services/regression_detector.py`](services/regression_detector.py) | Compares base and pull request results and identifies new, pre-existing, and fixed issues. |
-| [`services/report_generator.py`](services/report_generator.py) | Combines result artifacts and produces Markdown reports, workflow annotations, pull request comments, and health snapshots. |
+| [`services/report_generator.py`](services/report_generator.py) | Combines result artifacts and produces Markdown reports and health snapshots. It also supports optional workflow annotations and pull request comments. |
 | [`services/mock_runtime/`](services/mock_runtime/) | Replaces supported external LLM calls with deterministic responses during configured smoke validation. |
 
 ## Validation stages
@@ -102,6 +101,11 @@ Dynamic validation can:
 3. validate the configured JSONL dataset structure; and
 4. execute Ianvs with a temporary smoke benchmark configuration.
 
+The standalone `--jsonl` stage validates dataset structure without running the
+runtime smoke test. The `--smoke` stage performs the same JSONL structure checks
+before runtime execution, so the CI dynamic command does not also pass
+`--jsonl`.
+
 The supported environment-preparation contract is an ordered inventory schema:
 
 ```yaml
@@ -121,7 +125,8 @@ Active, migrated validation targets use `prepare_env.steps`. The inventory also
 contains legacy, unvalidated entries with fields such as
 `dataset.prepare_script: null`; those entries have not necessarily migrated to
 the preparation contract and do not imply that the legacy field is the
-recommended schema.
+recommended schema. When an entry has no `prepare_env` mapping, smoke validation
+retains a backward-compatible fallback to `dataset.prepare_script`.
 
 When an inventory entry enables the mock runtime, the smoke test substitutes
 deterministic LLM responses. A passing `mocked_llm` result confirms the tested
@@ -133,9 +138,9 @@ provider, GPU, or output quality has passed.
 | Tier | Selection | Checks |
 | --- | --- | --- |
 | T0 | Inventory examples with changed `.py`, `.yaml`, or `.yml` files below their example path | Static validation |
-| T1 | Active examples changed by a pull request | Dependencies, environment preparation, dataset, and smoke validation |
-| T2 | Changes to shared `core/`, workflow, or validator code | Dynamic validation for all active inventory targets |
-| T3 | Scheduled or broad main-branch run | Dynamic validation for all active targets and health snapshot publication |
+| T1 | Changed inventory entries | Active entries execute dynamic validation; inactive entries are reported as `SKIP` |
+| T2 | Changes below `core/**`, `.github/workflows/validator/**`, or `.github/workflows/dynamic_code_cicd.yaml` | All inventory entries are selected; active entries execute dynamic validation and inactive entries are reported as `SKIP` |
+| T3 | Scheduled run, push to `main`, or manual workflow dispatch | Dynamic validation for all active targets and health snapshot publication |
 
 ```mermaid
 flowchart LR
@@ -149,7 +154,11 @@ flowchart LR
 This table describes the currently implemented selection behavior. The
 proposal's UC-01.1 document-only validation is planned coverage: Markdown and
 README changes do not currently select T0 targets or receive Markdown-specific
-validation.
+validation. Internally, `inventory_loader.py` treats any `.github/workflows/`
+change as a dynamic run-all prefix, but the GitHub Actions path filter only
+triggers this workflow for validator files and
+`.github/workflows/dynamic_code_cicd.yaml`; other workflow changes do not
+currently trigger T2.
 
 ## Pull request decisions
 
@@ -197,10 +206,17 @@ logs** links to the workflow run for the traceback and command output needed to
 diagnose the failure.
 
 CI reports describe a particular validation run. Maintained T2 and T3 results
-are also published as example health snapshots. The current user-facing status
+are also published to `.github/example-status/` on the
+`ci-managed/example-health-status` branch. Validator results remain
+benchmark-job/YAML units, while the currently published status badges aggregate
+those results by the top-level `example` value. The current user-facing status
 and classification matrix is available in the
 [`examples/README.md`](../../../examples/README.md). Use the newest complete
 T2/T3 evidence when a matrix status and an older workflow report disagree.
+
+`report_generator.py` supports `--annotations` and `--pr-comment`, but the
+current static and dynamic workflows do not enable either option. They publish
+the Markdown report to the GitHub Step Summary and upload report artifacts.
 
 ## Quick Start
 
@@ -238,16 +254,15 @@ python .github/workflows/validator/validation_runner.py \
   --dependency \
   --pip-install \
   --prepare-env \
-  --jsonl \
   --smoke \
-  --example examples/llm_simple_qa \
-  --timeout 600
+  --example examples/llm_simple_qa
 ```
 
 This command (1) validates and installs the example dependencies, (2) executes
-the inventory-defined `prepare_env` steps, (3) validates the JSONL dataset, and
-(4) executes the runtime smoke test. The configured Mock LLM runtime means the
-result is `mocked_llm` evidence, not real-model or provider validation.
+the inventory-defined `prepare_env` steps, and (3) runs smoke validation, which
+validates the JSONL dataset structure before executing the runtime smoke test.
+The configured Mock LLM runtime means the result is `mocked_llm` evidence, not
+real-model or provider validation.
 
 See the [local validation guide](../../../docs/example_validator/local_validation.md)
 for affected-example detection, `act` limitations, reports and exit codes,
@@ -308,23 +323,12 @@ policy separately decides whether the issue was introduced by the pull request.
 
 ### Local workflow
 
-The proposal plans a complete local CI workflow based on `nektos/act`, but it
-is not implemented yet. The workflows pass validation results between jobs
-with `actions/upload-artifact@v7` and `actions/download-artifact@v8`; the open
-[`nektos/act#6114`](https://github.com/nektos/act/issues/6114) blocker prevents
-that artifact handoff from completing in `act`. The project will not downgrade
-the production GitHub Actions or add an Ianvs-specific artifact workaround.
-
-Until the corresponding fix is merged and included in a usable `act` release,
-direct `validation_runner.py` execution is the supported local path. Remaining
-proposal work includes:
-
-- local workflow orchestration and validation artifact handoff between jobs;
-- synchronizing and fetching the upstream baseline;
-- creating a temporary local validation branch;
-- rebasing contributor changes onto the latest upstream baseline;
-- running affected-example validation on the rebased temporary branch; and
-- safely cleaning up the temporary branch after validation.
+The complete cross-job local workflow remains blocked by
+[`nektos/act#6114`](https://github.com/nektos/act/issues/6114), which prevents
+the current artifact actions from handing results between jobs in `act`.
+Direct `validation_runner.py` execution remains the primary local path; see the
+[local validation guide](../../../docs/example_validator/local_validation.md)
+for the limitation and planned workflow lifecycle.
 
 ### Reporting and observability
 

@@ -67,31 +67,32 @@ python .github/workflows/validator/validation_runner.py \
   --dependency \
   --pip-install \
   --prepare-env \
-  --jsonl \
   --smoke \
-  --example examples/llm_simple_qa \
-  --timeout 600
+  --example examples/llm_simple_qa
 ```
 
-This command runs four explicit stages:
+This command matches the T1/T2/T3 dynamic command in the current workflow and
+runs three explicit stages:
 
 1. `--dependency --pip-install` validates and installs the example dependencies into the active environment.
 2. `--prepare-env` executes the ordered `prepare_env.steps` declared by the inventory.
-3. `--jsonl` validates the configured JSONL dataset.
-4. `--smoke` executes the runtime smoke test.
+3. `--smoke` validates the configured JSONL dataset structure and then executes the runtime smoke test.
 
 The smoke run automatically enables the inventory-declared Mock LLM runtime; no model download, GPU, or API credential is required. The result must be read as `mocked_llm`, not real-model validation. Use a disposable environment because `--pip-install` changes installed packages.
 
-To validate preparation and smoke inputs without starting Ianvs:
+Use the standalone `--jsonl` stage when dataset validation is needed without
+runtime smoke execution:
 
 ```bash
 python .github/workflows/validator/validation_runner.py \
   --prepare-env \
   --jsonl \
-  --smoke \
-  --no-execute-smoke \
   --example examples/llm_simple_qa
 ```
+
+CLI `--timeout` controls dependency installation or resolution checks and the
+runtime smoke command. Each `prepare_env.steps[].timeout` controls only that
+preparation step and is not overridden by CLI `--timeout`.
 
 ## Inventory preparation contract
 
@@ -113,7 +114,9 @@ prepare_env:
 Active, migrated validation targets use ordered `prepare_env.steps`. Legacy,
 unvalidated inventory entries may still contain fields such as
 `dataset.prepare_script: null` because they have not been migrated. Do not use
-that legacy field as the model for new or activated targets.
+that legacy field as the model for new or activated targets. For entries with
+no `prepare_env` mapping, smoke validation retains a backward-compatible
+fallback to `dataset.prepare_script`.
 
 ## Reports and exit codes
 
@@ -145,7 +148,9 @@ python .github/workflows/validator/services/inventory_loader.py \
   --head-ref HEAD
 ```
 
-Static detection considers changed `.py`, `.yaml`, and `.yml` files below inventory example paths. It does not currently select README or other Markdown-only changes. Dynamic detection considers all changed files below example paths and expands the selection to all inventory entries when `core/` or `.github/workflows/` changes; only entries with `status: active` execute dynamic stages.
+Static detection considers changed `.py`, `.yaml`, and `.yml` files below inventory example paths. It does not currently select README or other Markdown-only changes. Dynamic detection first selects all changed inventory entries, including inactive entries. `validation_runner.py` executes dynamic stages only for entries with `status: active`; each selected inactive entry receives a `Dynamic validation eligibility: SKIP` result.
+
+When invoked directly, `inventory_loader.py` expands dynamic selection to all inventory entries for changes below `core/` or `.github/workflows/`. The GitHub Actions workflow has a narrower event path filter: it triggers for `examples/**`, `core/**`, `.github/workflows/validator/**`, and `.github/workflows/dynamic_code_cicd.yaml`. Changes to other workflow files do not currently start this dynamic workflow.
 
 The proposal's UC-01.1 document-only validation remains planned coverage. The current workflows do not implement Markdown-specific validation, so do not treat a documentation-only change as an implemented T0 runtime path.
 

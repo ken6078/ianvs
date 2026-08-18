@@ -14,9 +14,9 @@ See also:
 
 | Badge | Meaning |
 | --- | --- |
-| ![Runnable](https://img.shields.io/badge/status-Runnable-brightgreen) | The active example passed the latest published broad validation. |
-| ![Broken](https://img.shields.io/badge/status-Broken-red) | The latest broad result contains a blocking failure. |
-| ![CI/CD onGoing](https://img.shields.io/badge/status-CI%2FCD%20onGoing-lightgrey) | The benchmark is inventoried, but dynamic validation has not been activated or has no published result. |
+| ![Runnable](https://img.shields.io/badge/status-Runnable-brightgreen) | The top-level example group passed its latest published broad validation. |
+| ![Broken](https://img.shields.io/badge/status-Broken-red) | At least one validated benchmark unit in the top-level example group has a blocking failure. |
+| ![CI/CD onGoing](https://img.shields.io/badge/status-CI%2FCD%20onGoing-lightgrey) | The top-level example group contains unvalidated inventory or has no published result. |
 | ![Example onGoing](https://img.shields.io/badge/status-Example%20onGoing-yellow) | Development of the example itself is still in progress. |
 | ![Requires external dataset or model download](https://img.shields.io/badge/status-Requires%20external%20dataset%20or%20model%20download-blue) | Normal CI cannot obtain a required dataset or model. |
 | ![Requires GPU or special hardware](https://img.shields.io/badge/status-Requires%20GPU%20or%20special%20hardware-orange) | The required hardware is unavailable on normal validation runners. |
@@ -48,7 +48,11 @@ Other report-level reasons, including hardware assumptions and metric edge cases
 
 ## Status publication
 
-T2/T3 workflows generate per-example JSON snapshots and a summary, then publish them to the `example-status` branch. `examples/README.md` renders badges from those snapshots. The snapshot includes the example identifier, current result, validation timestamp, and source commit.
+T2/T3 workflows generate top-level-example JSON snapshots and a summary under
+`.github/example-status/`, then publish them to the
+`ci-managed/example-health-status` branch. `examples/README.md` renders badges
+from those snapshots. Each snapshot includes the top-level example identifier,
+aggregated status, validation timestamp, and source commit.
 
 If a badge and a workflow report disagree, prefer the newest complete T2/T3 report, verify that snapshot publication succeeded, and then refresh or repair the status branch. Do not manually claim a passing status without matching validation evidence.
 
