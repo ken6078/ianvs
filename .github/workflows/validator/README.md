@@ -223,6 +223,22 @@ python .github/workflows/validator/validation_runner.py \
 When no dynamic stage is selected, the runner performs static validation by
 default.
 
+### Run dynamic validation
+
+The following command installs example dependencies into the active
+environment, prepares the dataset, validates JSONL, and executes the smoke path:
+
+```bash
+python .github/workflows/validator/validation_runner.py \
+  --prepare-env \
+  --smoke \
+  --example examples/llm_simple_qa \
+  --timeout 600
+```
+
+Use a disposable virtual environment with `--pip-install`; installing an
+example's dependencies can change existing packages.
+
 ### Validate dependencies
 
 Check declarations without asking pip to resolve or install packages:
@@ -239,36 +255,6 @@ Ask pip to resolve dependencies without installing them:
 python .github/workflows/validator/validation_runner.py \
   --dependency \
   --pip-install-check \
-  --example examples/llm_simple_qa
-```
-
-### Run dynamic validation
-
-The following command installs example dependencies into the active
-environment, prepares the dataset, validates JSONL, and executes the smoke path:
-
-```bash
-python .github/workflows/validator/validation_runner.py \
-  --dependency \
-  --pip-install \
-  --prepare-env \
-  --jsonl \
-  --smoke \
-  --example examples/llm_simple_qa \
-  --timeout 600
-```
-
-Use a disposable virtual environment with `--pip-install`; installing an
-example's dependencies can change existing packages.
-
-Prepare and validate the smoke inputs without starting Ianvs:
-
-```bash
-python .github/workflows/validator/validation_runner.py \
-  --prepare-env \
-  --jsonl \
-  --smoke \
-  --no-execute-smoke \
   --example examples/llm_simple_qa
 ```
 
