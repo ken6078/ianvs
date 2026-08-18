@@ -102,6 +102,27 @@ Dynamic validation can:
 3. validate the configured JSONL dataset structure; and
 4. execute Ianvs with a temporary smoke benchmark configuration.
 
+The supported environment-preparation contract is an ordered inventory schema:
+
+```yaml
+prepare_env:
+  working_directory: examples/llm_simple_qa
+  steps:
+    - name: prepare_dataset
+      type: dataset
+      script: scripts/02_prepare_dataset.py
+      args:
+        - --output-dir
+        - ../../dataset/llm_simple_qa
+      timeout: 300
+```
+
+Active, migrated validation targets use `prepare_env.steps`. The inventory also
+contains legacy, unvalidated entries with fields such as
+`dataset.prepare_script: null`; those entries have not necessarily migrated to
+the preparation contract and do not imply that the legacy field is the
+recommended schema.
+
 When an inventory entry enables the mock runtime, the smoke test substitutes
 deterministic LLM responses. A passing `mocked_llm` result confirms the tested
 integration path only. It does not establish that a real model, external
@@ -111,7 +132,7 @@ provider, GPU, or output quality has passed.
 
 | Tier | Selection | Checks |
 | --- | --- | --- |
-| T0 | Inventory examples changed by a pull request | Static validation |
+| T0 | Inventory examples with changed `.py`, `.yaml`, or `.yml` files below their example path | Static validation |
 | T1 | Active examples changed by a pull request | Dependencies, environment preparation, dataset, and smoke validation |
 | T2 | Changes to shared `core/`, workflow, or validator code | Dynamic validation for all active inventory targets |
 | T3 | Scheduled or broad main-branch run | Dynamic validation for all active targets and health snapshot publication |
@@ -124,6 +145,11 @@ flowchart LR
     T3[T3: scheduled health validation]
     T0 --> T1 --> T2 --> T3
 ```
+
+This table describes the currently implemented selection behavior. The
+proposal's UC-01.1 document-only validation is planned coverage: Markdown and
+README changes do not currently select T0 targets or receive Markdown-specific
+validation.
 
 ## Pull request decisions
 
@@ -176,18 +202,12 @@ and classification matrix is available in the
 [`examples/README.md`](../../../examples/README.md). Use the newest complete
 T2/T3 evidence when a matrix status and an older workflow report disagree.
 
-## Local usage
+## Quick Start
 
 Run all commands from the Ianvs repository root.
 
-### Prerequisites
-
-- Python 3.8 or the `python_version` declared by the selected inventory entry;
-- Git; and
-- a disposable virtual environment for dependency installation and dynamic
-  validation.
-
-Install the lightweight validator dependency:
+Create a disposable validator environment and install its lightweight
+dependency:
 
 ```bash
 python -m venv .venv-validator
@@ -195,7 +215,15 @@ python -m venv .venv-validator
 python -m pip install -r .github/workflows/validator/requirements.txt
 ```
 
-Dynamic smoke execution also requires Ianvs:
+Run static validation for one benchmark unit:
+
+```bash
+python .github/workflows/validator/validation_runner.py \
+  --static \
+  --example examples/llm_simple_qa
+```
+
+For dynamic validation, first install Ianvs into the disposable environment:
 
 ```bash
 python -m pip install -r requirements.txt
@@ -203,99 +231,27 @@ python -m pip install resources/third_party/sedna-0.6.0.1-py3-none-any.whl
 python -m pip install -e . --no-deps
 ```
 
-### Run static validation
-
-Validate all active inventory entries:
-
-```bash
-python .github/workflows/validator/validation_runner.py --static --all
-```
-
-Validate one benchmark unit. `--example` accepts an inventory name, example
-path, or benchmark file and can be repeated:
+Then run the complete dynamic validation path for `llm_simple_qa`:
 
 ```bash
 python .github/workflows/validator/validation_runner.py \
-  --static \
-  --example examples/llm_simple_qa
-```
-
-When no dynamic stage is selected, the runner performs static validation by
-default.
-
-### Run dynamic validation
-
-The following command installs example dependencies into the active
-environment, prepares the dataset, validates JSONL, and executes the smoke path:
-
-```bash
-python .github/workflows/validator/validation_runner.py \
+  --dependency \
+  --pip-install \
   --prepare-env \
+  --jsonl \
   --smoke \
   --example examples/llm_simple_qa \
   --timeout 600
 ```
 
-Use a disposable virtual environment with `--pip-install`; installing an
-example's dependencies can change existing packages.
+This command (1) validates and installs the example dependencies, (2) executes
+the inventory-defined `prepare_env` steps, (3) validates the JSONL dataset, and
+(4) executes the runtime smoke test. The configured Mock LLM runtime means the
+result is `mocked_llm` evidence, not real-model or provider validation.
 
-### Validate dependencies
-
-Check declarations without asking pip to resolve or install packages:
-
-```bash
-python .github/workflows/validator/validation_runner.py \
-  --dependency \
-  --example examples/llm_simple_qa
-```
-
-Ask pip to resolve dependencies without installing them:
-
-```bash
-python .github/workflows/validator/validation_runner.py \
-  --dependency \
-  --pip-install-check \
-  --example examples/llm_simple_qa
-```
-
-### Save a report
-
-Markdown is printed to standard output by default. Use `--format` and
-`--report` to save Markdown or JSON:
-
-```bash
-python .github/workflows/validator/validation_runner.py \
-  --static \
-  --example examples/llm_simple_qa \
-  --format json \
-  --report /tmp/llm-simple-qa-validation.json
-```
-
-The runner exits with code `0` when no check contains `FAIL` or `ERROR`, and
-with code `1` otherwise. `WARNING` and `SKIP` remain visible but do not change
-the exit code.
-
-### Detect affected examples
-
-Reproduce CI target selection between two Git revisions:
-
-```bash
-python .github/workflows/validator/services/inventory_loader.py \
-  --mode static \
-  --base-ref upstream/main \
-  --head-ref HEAD
-
-python .github/workflows/validator/services/inventory_loader.py \
-  --mode dynamic \
-  --base-ref upstream/main \
-  --head-ref HEAD
-```
-
-Static selection considers changed Python and YAML files below inventory
-example paths. Dynamic selection includes changed examples and expands to all
-inventory examples when shared `core/` or `.github/workflows/` files change.
-Only active entries execute dynamic stages; explicitly selected inactive
-entries are reported as skipped.
+See the [local validation guide](../../../docs/example_validator/local_validation.md)
+for affected-example detection, `act` limitations, reports and exit codes,
+dependency modes, upstream-baseline guidance, and troubleshooting.
 
 ## Adding a validation target
 
@@ -349,6 +305,26 @@ policy separately decides whether the issue was introduced by the pull request.
 - Restrict preparation script filesystem and network access.
 - Add retry, flaky-result detection, and quarantine workflows.
 - Cache package and dataset inputs without reusing old validation conclusions.
+
+### Local workflow
+
+The proposal plans a complete local CI workflow based on `nektos/act`, but it
+is not implemented yet. The workflows pass validation results between jobs
+with `actions/upload-artifact@v7` and `actions/download-artifact@v8`; the open
+[`nektos/act#6114`](https://github.com/nektos/act/issues/6114) blocker prevents
+that artifact handoff from completing in `act`. The project will not downgrade
+the production GitHub Actions or add an Ianvs-specific artifact workaround.
+
+Until the corresponding fix is merged and included in a usable `act` release,
+direct `validation_runner.py` execution is the supported local path. Remaining
+proposal work includes:
+
+- local workflow orchestration and validation artifact handoff between jobs;
+- synchronizing and fetching the upstream baseline;
+- creating a temporary local validation branch;
+- rebasing contributor changes onto the latest upstream baseline;
+- running affected-example validation on the rebased temporary branch; and
+- safely cleaning up the temporary branch after validation.
 
 ### Reporting and observability
 
