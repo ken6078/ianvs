@@ -163,13 +163,13 @@ jobs:
 
           (
             cd "${IANVS_BASE_DIR}"
-            python "${GITHUB_WORKSPACE}/.github/workflows/validator/validation_runner.py" \
+            python "${IANVS_BASE_DIR}/.github/workflows/validator/validation_runner.py" \
               --dependency \
               --pip-install \
               --prepare-env \
               --smoke \
               --example "${{ matrix.selector }}" \
-              --inventory "${GITHUB_WORKSPACE}/.github/workflows/validator/data/example_inventory.yaml" \
+              --inventory "${IANVS_BASE_DIR}/.github/workflows/validator/data/example_inventory.yaml" \
               --format json \
               --report "${result_file}"
           ) 2>&1 | tee "${log_file}"
