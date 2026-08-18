@@ -170,20 +170,6 @@ A mocked run proves that the unchanged inference integration and benchmark flow 
 
 Examples that require an external API key and do not have a supported Mock Runtime cannot run a meaningful credential-free smoke test. Classify that limitation explicitly; do not publish a real-provider passing status from a substituted response.
 
-## Validation reports
-
-Human-readable reports are summaries of structured JSON results. Diagnostics use the form:
-
-```text
-path/to/file -> (Line 31): offending value
-```
-
-The file and line identify where maintainers should look; the value and message explain what triggered the check and why it matters. Regression details show at most the first ten diagnostics in Markdown and report how many more exist. Use the JSON artifact when the summary is truncated.
-
-The regression summary separates current, pre-existing, new, and fixed issues. A heading such as `Collected Result Files` refers to validator JSON artifacts for selected inventory benchmark jobs/YAML files. It does not mean that one result is generated for every source file changed by the contributor.
-
-Direct base and PR validation jobs preserve their result artifacts even when an individual validator exits non-zero. This is intentional: the regression comparison is the job that decides whether a newly introduced blocking issue fails the pull request.
-
 ## CI coverage
 
 The repository uses these validation levels:

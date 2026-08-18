@@ -23,6 +23,22 @@ See also:
 | ![Quarantined](https://img.shields.io/badge/status-Quarantined-8a2be2) | Dynamic validation is intentionally disabled pending repair or a maintainer decision. |
 | ![Known issue](https://img.shields.io/badge/status-Known%20issue-critical) | A failure has been triaged and accepted temporarily. |
 
+## Published snapshot aggregation
+
+Inventory status is policy input, while the current published snapshot is derived from the top-level example's validation evidence with this precedence:
+
+| Evidence or inventory state | Published status |
+| --- | --- |
+| Any matched benchmark unit has a blocking `FAIL` or `ERROR` | `Broken` |
+| A unit is `quarantined` | `Quarantined` |
+| A unit is `known_issue` or `known issue` | `Known issue` |
+| A unit is `requires_hardware` or `hardware` | `Requires GPU or special hardware` |
+| A unit is `onGoing` | `Example onGoing` |
+| A unit is `unvalidated`, or the group has no matching result | `CI/CD onGoing` |
+| Otherwise | `Runnable` |
+
+The report generator recognizes external-resource and `broken` inventory values in its health-display vocabulary, but the current workflow's snapshot aggregator does not publish those badges from the inventory value alone. In particular, `Broken` requires a matched blocking result; a top-level example group with no matching result falls back to `CI/CD onGoing`.
+
 ## Broken reasons
 
 A reason describes why an example is broken; it is not a second lifecycle status.
@@ -31,7 +47,6 @@ A reason describes why an example is broken; it is not a second lifecycle status
 | --- | --- |
 | ![Dataset or resource unavailable](https://img.shields.io/badge/reason-Dataset%20or%20resource%20unavailable-795548) | A dataset, model, service, or other required resource is unavailable. |
 | ![Dependency drift](https://img.shields.io/badge/reason-Dependency%20drift-ff69b4) | A dependency no longer resolves, installs, imports, or behaves compatibly. |
-| ![Documentation issue](https://img.shields.io/badge/reason-Documentation%20issue-607d8b) | Instructions or documented paths do not match the example. |
 
 Other report-level reasons, including hardware assumptions and metric edge cases, may appear in CI artifacts even when the matrix shows the broader `Broken` status.
 
@@ -59,6 +74,14 @@ If a badge and a workflow report disagree, prefer the newest complete T2/T3 repo
 A full T2 pull-request run produces broad **base-branch** health evidence. That evidence may be published on the next scheduled planning run even if the pull request is still open or is never merged, because it validated the current main-branch target set. Publishing it resets the seven-day T3 cadence from the T2 validation time. The PR-head result remains PR review evidence and must not replace main-branch health.
 
 A later complete T3 run supersedes older T2 evidence. This latest-complete-result rule is important because an example can drift after a passing T2 without any repository change—for example, when a dependency, dataset, model, API, or runner environment changes.
+
+## Status evidence policy
+
+- Use the inventory as the maintained policy source and generated T2/T3 snapshots as validation evidence.
+- Do not label a mocked LLM run as evidence of a real model or provider passing.
+- Do not use resource or hardware statuses to hide an ordinary reproducible software defect.
+- Record constraints and follow-up references in inventory metadata or the tracking issue.
+- When a failure is fixed, rerun the highest practical tier and keep the resulting report or snapshot as evidence.
 
 ## Maintainer actions
 
