@@ -1153,6 +1153,9 @@ def append_regression_summary(
     comparisons = payload.get("comparisons", [])
     if not isinstance(comparisons, list):
         comparisons = []
+    example_changes = payload.get("example_changes", [])
+    if not isinstance(example_changes, list):
+        example_changes = []
     excluded = set(excluded_examples)
     comparisons = [
         comparison
@@ -1171,8 +1174,50 @@ def append_regression_summary(
             runtime_artifact_links=runtime_artifact_links,
             base_artifact_links=base_artifact_links,
         )
+    summary = regression_example_change_summary(example_changes) + summary
     summary.append("")
     return rendered.rstrip() + "\n" + "\n".join(summary).rstrip() + "\n"
+
+
+def regression_example_change_summary(changes: Sequence[object]) -> List[str]:
+    normalized = [change for change in changes if isinstance(change, dict)]
+    if not normalized:
+        return ["", "**Example changes:** None", ""]
+
+    added_count = sum(change.get("change") == "Added" for change in normalized)
+    removed_count = sum(change.get("change") == "Removed" for change in normalized)
+    summary = [
+        "",
+        "## Example Changes",
+        "",
+        "- Added examples: {}".format(added_count),
+        "- Removed examples: {}".format(removed_count),
+        "",
+        "| Change | Example | Validation | Classification | Blocks PR |",
+        "|---|---|---|---|---|",
+    ]
+    for change in normalized:
+        result = str(change.get("validation") or "Unknown")
+        previous_state = str(change.get("previous_validation_state") or "")
+        if change.get("change") == "Removed" and previous_state:
+            result = "Removed (base: {})".format(previous_state)
+        inventory_status = str(change.get("inventory_status") or "")
+        if inventory_status:
+            result = "{} (`{}`)".format(result, inventory_status)
+        path = str(change.get("path") or "")
+        name = str(change.get("name") or path)
+        summary.append(
+            "| {} | `{}` (`{}`) | {} | {} | {} |".format(
+                escape_table(str(change.get("change") or "")),
+                escape_table(path),
+                escape_table(name),
+                escape_table(result),
+                escape_table(str(change.get("classification") or "")),
+                "Yes" if change.get("blocks_pr") else "No",
+            )
+        )
+    summary.append("")
+    return summary
 
 
 def static_regression_summary(

@@ -87,10 +87,15 @@ jobs:
       mode: ${{ steps.check_examples.outputs.mode }}
       run_all: ${{ steps.check_examples.outputs.run_all }}
       examples_changed: ${{ steps.check_examples.outputs.examples_changed }}
-      changed_examples: ${{ steps.check_examples.outputs.changed_examples }}
-      validation_matrix: ${{ steps.check_examples.outputs.validation_matrix }}
+      base_examples_changed: ${{ steps.check_examples.outputs.base_examples_changed }}
+      head_examples_changed: ${{ steps.check_examples.outputs.head_examples_changed }}
+      base_changed_examples: ${{ steps.check_examples.outputs.base_changed_examples }}
+      head_changed_examples: ${{ steps.check_examples.outputs.head_changed_examples }}
+      base_validation_matrix: ${{ steps.check_examples.outputs.base_validation_matrix }}
+      head_validation_matrix: ${{ steps.check_examples.outputs.head_validation_matrix }}
       changed_files: ${{ steps.check_examples.outputs.changed_files }}
-      check_items: ${{ steps.check_examples.outputs.check_items }}
+      base_check_items: ${{ steps.check_examples.outputs.base_check_items }}
+      head_check_items: ${{ steps.check_examples.outputs.head_check_items }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -108,17 +113,18 @@ jobs:
             --mode dynamic \
             --inventory .github/workflows/validator/data/example_inventory.yaml \
             --base-ref "${{ github.event.pull_request.base.sha }}" \
+            --base-inventory-ref "${{ github.event.pull_request.base.sha }}" \
             --head-ref HEAD
 
   dynamic-code-requirement-base:
     needs: detect-change-examples
-    if: ${{ github.event_name == 'pull_request' && needs.detect-change-examples.outputs.examples_changed == 'true' }}
+    if: ${{ github.event_name == 'pull_request' && needs.detect-change-examples.outputs.base_examples_changed == 'true' }}
     runs-on: ubuntu-latest
     permissions: read-all
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJson(needs.detect-change-examples.outputs.validation_matrix) }}
+        include: ${{ fromJson(needs.detect-change-examples.outputs.base_validation_matrix) }}
     name: ${{ format('Base dynamic example validation ({0}, Python {1})', matrix.selector, matrix.python_version) }}
     steps:
       - uses: actions/checkout@v7
@@ -186,13 +192,13 @@ jobs:
 
   dynamic-code-requirement-pr:
     needs: detect-change-examples
-    if: ${{ github.event_name != 'schedule' && needs.detect-change-examples.outputs.examples_changed == 'true' }}
+    if: ${{ github.event_name != 'schedule' && needs.detect-change-examples.outputs.head_examples_changed == 'true' }}
     runs-on: ubuntu-latest
     permissions: read-all
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJson(needs.detect-change-examples.outputs.validation_matrix) }}
+        include: ${{ fromJson(needs.detect-change-examples.outputs.head_validation_matrix) }}
     name: ${{ format('PR dynamic example validation ({0}, Python {1})', matrix.selector, matrix.python_version) }}
     steps:
       - uses: actions/checkout@v7
@@ -268,6 +274,7 @@ jobs:
         run: python -m pip install -r .github/workflows/validator/requirements.txt
 
       - name: Download base dynamic validation results
+        if: ${{ needs.detect-change-examples.outputs.base_examples_changed == 'true' }}
         uses: actions/download-artifact@v8
         with:
           pattern: dynamic-validation-base-*
@@ -275,6 +282,7 @@ jobs:
           merge-multiple: true
 
       - name: Download PR dynamic validation results
+        if: ${{ needs.detect-change-examples.outputs.head_examples_changed == 'true' }}
         uses: actions/download-artifact@v8
         with:
           pattern: dynamic-validation-pr-*
@@ -288,6 +296,10 @@ jobs:
           python .github/workflows/validator/services/regression_detector.py \
             --base-results baseline-results \
             --head-results validation-results \
+            --base-ref "${{ github.event.pull_request.base.sha }}" \
+            --head-ref HEAD \
+            --allow-missing-base \
+            --allow-missing-head \
             --json-output regression-report.json \
             --json-only
 
@@ -325,6 +337,7 @@ jobs:
         run: python -m pip install -r .github/workflows/validator/requirements.txt
 
       - name: Download dynamic validation results
+        if: ${{ needs.detect-change-examples.outputs.head_examples_changed == 'true' }}
         uses: actions/download-artifact@v8
         with:
           pattern: dynamic-validation-pr-*
@@ -383,6 +396,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Download Tier 2 base validation results
+        if: ${{ needs.detect-change-examples.outputs.base_examples_changed == 'true' }}
         uses: actions/download-artifact@v8
         with:
           pattern: dynamic-validation-base-*
@@ -391,7 +405,7 @@ jobs:
 
       - name: Verify full Tier 2 base result set
         env:
-          EXPECTED_EXAMPLES: ${{ needs.detect-change-examples.outputs.changed_examples }}
+          EXPECTED_EXAMPLES: ${{ needs.detect-change-examples.outputs.base_changed_examples }}
         run: |
           python - <<'PY'
           import json
