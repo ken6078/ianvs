@@ -1,12 +1,12 @@
 benchmarkingjob:
-  # job name of bechmarking; string type;
+  # Demo validation trigger for the restored example; job name is a string.
   name: "benchmarkingjob"
   # the url address of job workspace that will reserve the output of tests; string type;
-  workspace: "/home/icyfeather/project/ianvs/workspace"
+  workspace: "./workspace"
 
   # the url address of test environment configuration file; string type;
   # the file format supports yaml/yml;
-  testenv: "./examples/llm/singletask_learning_bench/simple_qa/testenv/testenv.yaml"
+  testenv: "./examples/llm_simple_qa/testenv/testenv.yaml"
 
   # the configuration of test object
   test_object:
@@ -19,7 +19,7 @@ benchmarkingjob:
       - name: "simple_qa_singletask_learning"
         # the url address of test algorithm configuration file; string type;
         # the file format supports yaml/yml;
-        url: "./examples/llm/singletask_learning_bench/simple_qa/testalgorithms/gen/gen_algorithm.yaml"
+        url: "./examples/llm_simple_qa/testalgorithms/gen/gen_algorithm.yaml"
 
   # the configuration of ranking leaderboard
   rank:
@@ -64,7 +64,6 @@ benchmarkingjob:
     #  1> "selected_and_all": save selected and all dataitems;
     #  2> "selected_only": save selected dataitems;
     save_mode: "selected_and_all"
-
 
 
 
