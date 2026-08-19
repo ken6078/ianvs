@@ -6,11 +6,11 @@
 
 From the repository root, run:
 
-`python examples/llm_simple_qa/scripts/02_prepare_dataset.py`
+`python examples/llm_simple_qa_alias/scripts/02_prepare_dataset.py`
 
 For a smoke test, generate a single test row:
 
-`python examples/llm_simple_qa/scripts/02_prepare_dataset.py --smoke`
+`python examples/llm_simple_qa_alias/scripts/02_prepare_dataset.py --smoke`
 
 The script creates the following structure by default:
 
@@ -38,7 +38,7 @@ Example output for the default run:
 
 Install the example dependencies first:
 
-`cd examples/llm_simple_qa && scripts/01_install_requirements.sh requirements.txt`
+`cd examples/llm_simple_qa_alias && scripts/01_install_requirements.sh requirements.txt`
 
 Install Sedna from the bundled wheel:
 
@@ -49,7 +49,7 @@ Install Sedna from the bundled wheel:
 
 Run the following command:
 
-`ianvs -f examples/llm_simple_qa/benchmarkingjob.yaml`
+`ianvs -f examples/llm_simple_qa_alias/benchmarkingjob.yaml`
 
 ## OpenCompass Evaluation
 
@@ -61,4 +61,4 @@ Install OpenCompass from pip:
 
 ### Run Evaluation
 
-`python run_op.py examples/llm_simple_qa/testalgorithms/gen/op_eval.py`
+`python run_op.py examples/llm_simple_qa_alias/testalgorithms/gen/op_eval.py`
