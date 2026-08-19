@@ -169,8 +169,27 @@ def load_inventory_examples_at_ref(
     revision: str,
     active_only: bool = True,
 ) -> List[dict]:
+    inventory_object = "{}:{}".format(revision, inventory_path.as_posix())
+    object_check = subprocess.run(
+        ["git", "cat-file", "-e", inventory_object],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    if object_check.returncode != 0:
+        # A validator rollout can add the inventory and its workflow in the
+        # same PR. In that case the base revision is valid, but it has no
+        # inventory yet, so the correct comparison target is an empty list.
+        # Verify the revision separately so invalid refs and repository errors
+        # are not silently treated as a missing inventory.
+        subprocess.check_output(
+            ["git", "rev-parse", "--verify", "{}^{{commit}}".format(revision)],
+            text=True,
+            stderr=subprocess.STDOUT,
+        )
+        return []
+
     inventory_text = subprocess.check_output(
-        ["git", "show", "{}:{}".format(revision, inventory_path.as_posix())],
+        ["git", "show", inventory_object],
         text=True,
     )
     return inventory_examples(load_inventory_text(inventory_text), active_only)
