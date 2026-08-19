@@ -160,8 +160,13 @@ def _to_plain_dict(value):
 def _message_text(message):
     if isinstance(message, Mapping):
         content = message.get("content", "")
-    else:
+    elif hasattr(message, "content"):
         content = getattr(message, "content", "")
+    else:
+        # Responses/completions inputs may be supplied as a plain list of
+        # strings.  Preserve those strings so fixture prompt matching remains
+        # deterministic instead of silently reducing every item to "".
+        content = message
 
     # Multimodal-style content may contain several typed blocks.  Text blocks
     # are enough to make fixture matching useful without modelling the SDK.

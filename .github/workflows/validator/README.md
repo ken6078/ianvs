@@ -86,6 +86,20 @@ python -m venv .venv-validator
 python -m pip install -r .github/workflows/validator/requirements.txt
 ```
 
+### Run the validator tests
+
+The complete validator test suite is offline and uses Python's standard
+library test runner:
+
+```bash
+python .github/workflows/validator/tests/run_tests.py
+```
+
+The suite covers static and dependency rules, environment and dataset
+preparation, smoke execution, inventory and scheduled selection, PR regression
+classification, report and example-health generation, Mock Runtime adapters,
+and validation-runner orchestration.
+
 ### Quick static validation
 
 ```bash
