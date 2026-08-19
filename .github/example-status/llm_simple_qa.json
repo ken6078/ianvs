@@ -1,10 +1,10 @@
 {
-  "color": "brightgreen",
-  "commit": "fa3dd352417d52424bdfc118a541122d48c1cecf",
+  "color": "red",
+  "commit": "b8c0fa97c68f677e1ebf65bcde966a1ef272b662",
   "example": "llm_simple_qa",
   "label": "status",
-  "message": "Runnable",
+  "message": "Broken",
   "schemaVersion": 1,
-  "status": "passing",
-  "validated_at": "2026-08-18T19:51:18.706173Z"
+  "status": "failing",
+  "validated_at": "2026-08-19T07:05:03.504037Z"
 }

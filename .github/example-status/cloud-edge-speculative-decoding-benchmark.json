@@ -1,10 +1,10 @@
 {
   "color": "lightgrey",
-  "commit": "fa3dd352417d52424bdfc118a541122d48c1cecf",
+  "commit": "b8c0fa97c68f677e1ebf65bcde966a1ef272b662",
   "example": "cloud-edge-speculative-decoding-benchmark",
   "label": "status",
   "message": "CI/CD onGoing",
   "schemaVersion": 1,
   "status": "CI/CD onGoing",
-  "validated_at": "2026-08-18T19:51:18.706173Z"
+  "validated_at": "2026-08-19T07:05:03.504037Z"
 }
