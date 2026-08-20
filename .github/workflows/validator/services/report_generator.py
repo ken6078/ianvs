@@ -1007,15 +1007,16 @@ def render_dynamic_markdown(
         "",
         "**Overall result:** {}".format(result),
         "",
-        "| Examples | Errors | Skipped checks |",
-        "|---:|---:|---:|",
-        "| {} | {} | {} |".format(
+        "| Selected | Executed | Skipped | Errors |",
+        "|---:|---:|---:|---:|",
+        "| {} | {} | {} | {} |".format(
+            len(report.examples),
             len(runnable_examples),
+            len(skipped_examples),
             sum(
                 example.count_any(BLOCKING_STATUSES)
                 for example in runnable_examples
             ),
-            sum(example.count(SKIP) for example in runnable_examples),
         ),
         "",
     ]

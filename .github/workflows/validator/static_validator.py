@@ -281,13 +281,22 @@ def _report_result(report: StaticValidationReport) -> str:
 
 
 def render_json(report: StaticValidationReport) -> str:
+    def example_executed(example: ExampleReport) -> bool:
+        return any(check.status != SKIP for check in example.checks)
+
+    def example_passed(example: ExampleReport) -> bool:
+        return example.passed and example_executed(example)
+
     payload = {
-        "passed": report.passed,
+        "passed": report.passed and all(
+            example_passed(example) for example in report.reports
+        ),
         "examples": [
             {
                 "name": example.name,
                 "path": example.path,
-                "passed": example.passed,
+                "passed": example_passed(example),
+                "executed": example_executed(example),
                 "checks": [
                     {
                         "name": check.name,
