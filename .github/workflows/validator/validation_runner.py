@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 import traceback
 from pathlib import Path
@@ -48,6 +49,7 @@ from static_validator import validate_examples as validate_static_examples
 
 REPORT_FORMAT_JSON = "json"
 REPORT_FORMAT_MARKDOWN = "markdown"
+LOGGER = logging.getLogger("ianvs.validator.runner")
 
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
@@ -136,7 +138,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     selected_examples = load_selected_examples(repo_root, args)
 
     if not selected_examples:
-        print("No inventory examples matched the requested selection.", file=sys.stderr)
+        LOGGER.error("No inventory examples matched the requested selection.")
         return 1
 
     try:
@@ -332,12 +334,11 @@ def skip_dynamic_examples(
         example_path = normalize_selector(str(example.get("path", "")))
         example_name = str(example.get("name") or example_path)
         status = str(example.get("status", "unknown"))
-        print(
+        LOGGER.info(
             "Skipping dynamic validation for {} because inventory status is '{}'.".format(
                 example_name,
                 status,
-            ),
-            file=sys.stderr,
+            )
         )
         reports.append(
             ExampleReport(
@@ -382,14 +383,15 @@ def merge_reports(reports: Sequence[StaticValidationReport]) -> StaticValidation
 
 def write_or_print_report(rendered: str, report_path: str) -> None:
     if not report_path:
-        print(rendered, end="")
+        sys.stdout.write(rendered)
         return
 
     path = Path(report_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(rendered, encoding="utf-8")
-    print("Validation report written to {}".format(path))
+    LOGGER.info("Validation report written to %s", path)
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="[%(levelname)s] - %(message)s")
     raise SystemExit(main())

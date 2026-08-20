@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import glob
 import json
+import logging
 import os
 import re
 import subprocess
@@ -42,6 +43,7 @@ WARNING = "WARNING"
 SKIP = "SKIP"
 BLOCKING_STATUSES = {ERROR, FAIL}
 DYNAMIC_ELIGIBILITY_CHECK = "Dynamic validation eligibility"
+LOGGER = logging.getLogger("ianvs.validator.regression")
 
 CLASS_PASSED = "Passed"
 CLASS_PR_REGRESSION = "Failed: PR regression"
@@ -310,10 +312,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     head_paths = discover_result_paths(args.head_results)
 
     if not head_paths and not args.allow_missing_head:
-        print("No PR/head validation result JSON files were found.", file=sys.stderr)
+        LOGGER.error("No PR/head validation result JSON files were found.")
         return 2
     if not base_paths and not args.allow_missing_base:
-        print("No base validation result JSON files were found.", file=sys.stderr)
+        LOGGER.error("No base validation result JSON files were found.")
         return 2
 
     report = compare_results(
@@ -981,6 +983,11 @@ def render_markdown(report: RegressionReport) -> str:
         "",
         "## Summary",
         "",
+        (
+            "Compares main branch and PR validation results to find new failures. "
+            "Pre-existing failures do not block validation."
+        ),
+        "",
         "**PR blocking:** {}".format("Yes" if report.blocks_pr else "No"),
         "",
         "- Added examples: {}".format(report.added_example_count),
@@ -1217,20 +1224,20 @@ def publish_report(
 
 def write_or_print_report(rendered: str, output: str) -> None:
     if not output:
-        print(rendered, end="")
+        sys.stdout.write(rendered)
         return
 
     output_path = Path(output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(rendered, encoding="utf-8")
-    print("Regression report written to {}".format(output_path))
+    LOGGER.info("Regression report written to %s", output_path)
 
 
 def write_json_report(report: RegressionReport, output: str) -> None:
     output_path = Path(output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(render_json(report), encoding="utf-8")
-    print("Regression JSON written to {}".format(output_path))
+    LOGGER.info("Regression JSON written to %s", output_path)
 
 
 def append_step_summary(rendered: str) -> None:
@@ -1253,8 +1260,8 @@ def emit_annotations(report: RegressionReport) -> None:
             comparison.head_status,
             comparison.new_issue_count,
         )
-        print(
-            "::{command} file={file},title={title}::{message}".format(
+        sys.stdout.write(
+            "::{command} file={file},title={title}::{message}\n".format(
                 command="error",
                 file=escape_command_property(comparison.file or comparison.example),
                 title=escape_command_property(title),
@@ -1266,7 +1273,10 @@ def emit_annotations(report: RegressionReport) -> None:
 def maybe_update_pr_comment(rendered: str) -> None:
     context = github_context()
     if not context:
-        print("Not a pull_request event or GitHub context is incomplete; skipping PR comment.")
+        LOGGER.info(
+            "Not a pull_request event or GitHub context is incomplete; "
+            "skipping PR comment."
+        )
         return
 
     owner_repo, pr_number, token, api_url = context
@@ -1278,12 +1288,12 @@ def maybe_update_pr_comment(rendered: str) -> None:
         existing_url = find_existing_comment_url(comments)
         if existing_url:
             github_request("PATCH", existing_url, token, {"body": body})
-            print("Updated Ianvs regression report comment on PR #{}.".format(pr_number))
+            LOGGER.info("Updated Ianvs regression report comment on PR #%s.", pr_number)
         else:
             github_request("POST", comments_url, token, {"body": body})
-            print("Created Ianvs regression report comment on PR #{}.".format(pr_number))
+            LOGGER.info("Created Ianvs regression report comment on PR #%s.", pr_number)
     except (urllib.error.HTTPError, urllib.error.URLError, OSError) as exc:
-        print("Failed to update PR comment: {}".format(exc), file=sys.stderr)
+        LOGGER.error("Failed to update PR comment: %s", exc)
 
 
 def github_context() -> Optional[Tuple[str, int, str, str]]:
@@ -1368,4 +1378,5 @@ def escape_command_property(value: str) -> str:
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="[%(levelname)s] - %(message)s")
     raise SystemExit(main())

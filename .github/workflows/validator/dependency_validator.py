@@ -735,7 +735,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         timeout_seconds=args.timeout,
     )
     rendered = render_json(report) if args.format == "json" else render_dependency_markdown(report)
-    print(rendered, end="")
+    sys.stdout.write(rendered)
     return 0 if report.passed else 1
 
 

@@ -50,10 +50,10 @@ GitHub Actions outputs:
 
 import argparse
 import json
+import logging
 import os
 import re
 import subprocess
-import sys
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
@@ -68,6 +68,7 @@ STATIC_TRACKED_FILE_SUFFIXES = (".py", ".yaml", ".yml")
 MODE_STATIC = "static"
 MODE_DYNAMIC = "dynamic"
 TIER2_HEALTH_ARTIFACT = "tier2-base-health-results"
+LOGGER = logging.getLogger("ianvs.validator.inventory")
 HEALTH_RECORD_RE = re.compile(
     r"<!--\s*ianvs-example-health-record\s+(\{.*?\})\s*-->", re.DOTALL
 )
@@ -482,7 +483,7 @@ def export_schedule_outputs(plan: dict, output_path: str) -> None:
             "last_validated_at",
             "next_tier3_at",
         ):
-            print("{}={}".format(key, plan.get(key, "")), file=output)
+            output.write("{}={}\n".format(key, plan.get(key, "")))
 
 
 def detect_changes(
@@ -550,27 +551,25 @@ def detect_changes(
 
 def export_github_outputs(report: dict, output_path: str) -> None:
     with open(output_path, "a", encoding="utf-8") as output:
-        print("mode={}".format(report["mode"]), file=output)
-        print("run_all={}".format("true" if report["run_all"] else "false"), file=output)
-        print(
-            "examples_changed={}".format(
+        output.write("mode={}\n".format(report["mode"]))
+        output.write(
+            "run_all={}\n".format("true" if report["run_all"] else "false")
+        )
+        output.write(
+            "examples_changed={}\n".format(
                 "true" if report["examples_changed"] else "false"
-            ),
-            file=output,
+            )
         )
         for key in ("base_examples_changed", "head_examples_changed"):
             if key in report:
-                print(
-                    "{}={}".format(key, "true" if report[key] else "false"),
-                    file=output,
+                output.write(
+                    "{}={}\n".format(key, "true" if report[key] else "false")
                 )
-        print(
-            "changed_examples={}".format(json.dumps(report["changed_examples"])),
-            file=output,
+        output.write(
+            "changed_examples={}\n".format(json.dumps(report["changed_examples"]))
         )
-        print(
-            "validation_matrix={}".format(json.dumps(report["validation_matrix"])),
-            file=output,
+        output.write(
+            "validation_matrix={}\n".format(json.dumps(report["validation_matrix"]))
         )
         for key in (
             "base_changed_examples",
@@ -581,14 +580,14 @@ def export_github_outputs(report: dict, output_path: str) -> None:
             "head_check_items",
         ):
             if key in report:
-                print("{}={}".format(key, json.dumps(report[key])), file=output)
-        print("changed_files={}".format(json.dumps(report["changed_files"])), file=output)
-        print("check_items={}".format(json.dumps(report["check_items"])), file=output)
+                output.write("{}={}\n".format(key, json.dumps(report[key])))
+        output.write("changed_files={}\n".format(json.dumps(report["changed_files"])))
+        output.write("check_items={}\n".format(json.dumps(report["check_items"])))
 
 
 def print_report(report: dict) -> None:
     if report["base_ref"] and report["head_ref"]:
-        print(
+        LOGGER.info(
             "Detect mode: {mode}; comparing {base_ref}..{head_ref}".format(
                 mode=report["mode"],
                 base_ref=report["base_ref"],
@@ -596,17 +595,21 @@ def print_report(report: dict) -> None:
             )
         )
     else:
-        print("Detect mode: {mode}; using all inventory examples".format(mode=report["mode"]))
-    print("Run all inventory examples: {}".format(report["run_all"]))
+        LOGGER.info(
+            "Detect mode: %s; using all inventory examples", report["mode"]
+        )
+    LOGGER.info("Run all inventory examples: %s", report["run_all"])
 
     if report["changed_files"]:
-        print("Changed files:")
+        LOGGER.info("Changed files:")
         for changed_file in report["changed_files"]:
-            print("  - {}".format(changed_file))
+            LOGGER.info("  - %s", changed_file)
 
-    print("Examples to check:")
+    LOGGER.info("Examples to check:")
     for item in report["check_items"]:
-        print("  - {name}: {path}".format(name=item.get("name", item["path"]), path=item["path"]))
+        LOGGER.info(
+            "  - %s: %s", item.get("name", item["path"]), item["path"]
+        )
 
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
@@ -682,10 +685,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     inventory_path = Path(args.inventory)
     if args.plan_schedule:
         if args.cadence_days <= 0:
-            print("--cadence-days must be positive.", file=sys.stderr)
+            LOGGER.error("--cadence-days must be positive.")
             return 2
         if not args.repository or not args.token:
-            print("--repository and --token are required for schedule planning.", file=sys.stderr)
+            LOGGER.error("--repository and --token are required for schedule planning.")
             return 2
         now = parse_utc(args.now) if args.now else datetime.now(timezone.utc)
         try:
@@ -702,18 +705,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 now, health_record, tier2_artifact, args.cadence_days
             )
         except (OSError, ValueError) as error:
-            print("Unable to plan scheduled validation: {}".format(error), file=sys.stderr)
+            LOGGER.error("Unable to plan scheduled validation: %s", error)
             return 1
-        print("Scheduled validation action: {}".format(plan["action"]))
-        print("Reason: {}".format(plan["reason"]))
+        LOGGER.info("Scheduled validation action: %s", plan["action"])
+        LOGGER.info("Reason: %s", plan["reason"])
         if plan["next_tier3_at"]:
-            print("Next Tier 3 time: {}".format(plan["next_tier3_at"]))
+            LOGGER.info("Next Tier 3 time: %s", plan["next_tier3_at"])
         if args.github_output:
             export_schedule_outputs(plan, args.github_output)
         return 0
     if args.schedule:
         if args.mode != MODE_DYNAMIC:
-            print("--schedule is only supported with --mode dynamic.", file=sys.stderr)
+            LOGGER.error("--schedule is only supported with --mode dynamic.")
             return 2
         report = select_scheduled_examples(mode=args.mode, inventory_path=inventory_path)
     elif args.run_all:
@@ -735,4 +738,5 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="[%(levelname)s] - %(message)s")
     raise SystemExit(main())

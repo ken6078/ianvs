@@ -26,6 +26,7 @@ import argparse
 import glob
 import html
 import json
+import logging
 import os
 import re
 import sys
@@ -113,6 +114,7 @@ SKIP_REASON_STATUSES = (
 STATUS_REPOSITORY = "kubeedge/ianvs"
 STATUS_BRANCH = "ci-managed/example-health-status"
 STATUS_RESULT_ROOT = ".github/example-status"
+LOGGER = logging.getLogger("ianvs.validator.report")
 
 
 @dataclass
@@ -259,7 +261,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_args(argv)
     result_paths = discover_result_paths(args.results)
     if not result_paths and not args.allow_empty:
-        print("No validation result JSON files were found.", file=sys.stderr)
+        LOGGER.error("No validation result JSON files were found.")
         return 2
 
     report = load_combined_report(result_paths)
@@ -304,7 +306,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             str(metadata["source_sha"]),
         )
         if not snapshots:
-            print("No validation results matched the example inventory.", file=sys.stderr)
+            LOGGER.error("No validation results matched the example inventory.")
             return 2
         write_example_status_snapshots(
             snapshots,
@@ -622,20 +624,20 @@ def publish_report(
 
 def write_or_print_report(rendered: str, output: str) -> None:
     if not output:
-        print(rendered, end="")
+        sys.stdout.write(rendered)
         return
 
     output_path = Path(output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(rendered, encoding="utf-8")
-    print("Combined validation report written to {}".format(output_path))
+    LOGGER.info("Combined validation report written to %s", output_path)
 
 
 def write_text_file(rendered: str, output: str) -> None:
     output_path = Path(output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(rendered, encoding="utf-8")
-    print("Example health report written to {}".format(output_path))
+    LOGGER.info("Example health report written to %s", output_path)
 
 
 def load_health_metadata(path: str) -> Dict[str, object]:
@@ -1226,6 +1228,11 @@ def static_regression_summary(
         "",
         "## Regression Summary",
         "",
+        (
+            "Compares main branch and PR validation results to find new failures. "
+            "Pre-existing failures do not block validation."
+        ),
+        "",
         "### ERROR",
         "",
         "| Example | Current errors | Pre-existing errors | New errors | Fixed errors |",
@@ -1352,6 +1359,11 @@ def dynamic_regression_summary(
     summary = [
         "",
         "## Regression Summary",
+        "",
+        (
+            "Compares main branch and PR validation results to find new failures. "
+            "Pre-existing failures do not block validation."
+        ),
         "",
         "**Result:** {} — {}".format(
             FAIL if new_error_count else PASS,
@@ -1881,8 +1893,8 @@ def emit_annotations(
             message = check.message or check.name
             title = "{}: {}".format(example.path, check.name)
             command = "warning" if is_warning else "error"
-            print(
-                "::{command} file={file},title={title}::{message}".format(
+            sys.stdout.write(
+                "::{command} file={file},title={title}::{message}\n".format(
                     command=command,
                     file=escape_command_property(file_name),
                     title=escape_command_property(title),
@@ -1905,7 +1917,10 @@ def infer_file_from_details(details: Sequence[str]) -> str:
 def maybe_update_pr_comment(rendered: str) -> None:
     context = github_context()
     if not context:
-        print("Not a pull_request event or GitHub context is incomplete; skipping PR comment.")
+        LOGGER.info(
+            "Not a pull_request event or GitHub context is incomplete; "
+            "skipping PR comment."
+        )
         return
 
     owner_repo, pr_number, token, api_url = context
@@ -1917,12 +1932,12 @@ def maybe_update_pr_comment(rendered: str) -> None:
         existing_url = find_existing_comment_url(comments)
         if existing_url:
             github_request("PATCH", existing_url, token, {"body": body})
-            print("Updated Ianvs validation report comment on PR #{}.".format(pr_number))
+            LOGGER.info("Updated Ianvs validation report comment on PR #%s.", pr_number)
         else:
             github_request("POST", comments_url, token, {"body": body})
-            print("Created Ianvs validation report comment on PR #{}.".format(pr_number))
+            LOGGER.info("Created Ianvs validation report comment on PR #%s.", pr_number)
     except (urllib.error.HTTPError, urllib.error.URLError, OSError) as exc:
-        print("Failed to update PR comment: {}".format(exc), file=sys.stderr)
+        LOGGER.error("Failed to update PR comment: %s", exc)
 
 
 def github_context() -> Optional[Tuple[str, int, str, str]]:
@@ -2011,4 +2026,5 @@ def escape_command_property(value: str) -> str:
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="[%(levelname)s] - %(message)s")
     raise SystemExit(main())
