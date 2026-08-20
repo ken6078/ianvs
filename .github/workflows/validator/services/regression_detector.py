@@ -984,7 +984,7 @@ def render_markdown(report: RegressionReport) -> str:
         "## Summary",
         "",
         (
-            "Compares main branch and PR validation results to find new failures. "
+            "Compares the base branch and PR validation results to identify new failures. "
             "Pre-existing failures do not block validation."
         ),
         "",
