@@ -58,8 +58,11 @@ class BaseModel:
         if half==True:
             model=model.half()
         del self.train_config["half_lora"]
-        args=TrainingArguments(adam_epsilon=(1e-4 if half else 1e-8)
-                       ,**self.train_config)
+        args=TrainingArguments(
+             adam_epsilon=(1e-4 if half else 1e-8),
+             dataloader_pin_memory=torch.cuda.is_available(),
+             **self.train_config
+             )
         trainer=Trainer(model=model,args=args,data_collator=DataCollatorForSeq2Seq(tokenizer=self.tokenizer,padding=True),train_dataset=train_dataset, eval_dataset=None)
         trainer.train()
         self.model = trainer.model
@@ -71,6 +74,7 @@ class BaseModel:
         for text in data:
             prompt="\n".join(["user: ", str(text)])+"\n\nassistant: "
             inputs=self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=self.MAX_LENGTH)
+            inputs=inputs.to(next(self.model.parameters()).device)
             input_len=inputs["input_ids"].shape[1]
             with torch.no_grad():
                 outputs=self.model.generate(**inputs, max_new_tokens=8, pad_token_id=self.tokenizer.eos_token_id)
