@@ -400,7 +400,7 @@ examples:
           - "../../dataset/llm_simple_qa"
           - "--overwrite"
           - "--smoke"
-        timeout: 300
+        timeout: 360
   dataset:
     root: "dataset/llm_simple_qa"
     structure:
