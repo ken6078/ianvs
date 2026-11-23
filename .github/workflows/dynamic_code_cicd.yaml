@@ -15,8 +15,6 @@ on:
       - 'core/**'
       - '.github/workflows/validator/**'
       - '.github/workflows/dynamic_code_cicd.yaml'
-  schedule:
-    - cron: '31 15 * * *'
 
 jobs:
   plan-scheduled-validation:
